@@ -1,0 +1,6 @@
+subject_id,participant,trial,fitskin_cheek_L,fitskin_cheek_a,fitskin_cheek_b,reflectance_L,reflectance_a,reflectance_b,reflectance_fitskin_lightness_gain,delta_L,delta_a,delta_b,reflectance_cheek_de00
+P1_T1,Participant 1,1,68.9,11.4,15.8,66.2,11.3,14.0,1.0526785023775376,-2.7,-0.1,-1.8,2.47
+P1_T2,Participant 1,2,68.4,11.2,15.3,66.8,11.2,13.5,1.0526785023775376,-1.7,-0.1,-1.8,1.80
+P1_T3,Participant 1,3,69.6,11.4,15.8,67.0,11.2,13.5,1.0526785023775376,-2.6,-0.2,-2.3,2.55
+P2_T2,Participant 2,2,51.9,13.7,21.2,50.4,12.4,18.9,1.0629126918755374,-1.5,-1.2,-2.2,1.94
+P2_T3,Participant 2,3,52.8,12.9,21.2,50.5,12.2,19.0,1.0629126918755374,-2.3,-0.7,-2.2,2.60

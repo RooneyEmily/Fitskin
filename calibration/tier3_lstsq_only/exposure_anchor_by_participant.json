@@ -1,0 +1,39 @@
+{
+  "by_participant": {
+    "P1": 0.9608414187148837,
+    "P2": 1.3928807956578544
+  },
+  "training_trials": [
+    {
+      "subject_id": "P1_T1",
+      "n_patches": 24,
+      "white_patch_scale": 0.9608414187148837
+    },
+    {
+      "subject_id": "P1_T2",
+      "n_patches": 24,
+      "white_patch_scale": 0.9599576135732336
+    },
+    {
+      "subject_id": "P1_T3",
+      "n_patches": 24,
+      "white_patch_scale": 0.9760753749435449
+    },
+    {
+      "subject_id": "P2_T1",
+      "n_patches": 24,
+      "white_patch_scale": 1.3682023558275387
+    },
+    {
+      "subject_id": "P2_T2",
+      "n_patches": 24,
+      "white_patch_scale": 1.3979990669599573
+    },
+    {
+      "subject_id": "P2_T3",
+      "n_patches": 24,
+      "white_patch_scale": 1.3928807956578544
+    }
+  ],
+  "notes": "Multiply chart-free reflectance linear RGB by by_participant[Px] at inference (--exposure-anchor-from-training). Same scales used to fit camera_rgb_to_xyz."
+}

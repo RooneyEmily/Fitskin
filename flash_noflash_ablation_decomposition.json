@@ -1,0 +1,41 @@
+{
+  "cohort": "5 trials (P1_T1-T3, P2_T2-T3), chart-free, trained lstsq matrix, exposure anchor",
+  "reference": "FitSkin cheek Lab, reflectance_cheek_de00",
+  "factorial_reflectance_lab": {
+    "baseline_mesh_roi_global_exposure": {
+      "flags": [],
+      "median_de00": 5.2566040035361885,
+      "mean_de00": 6.849130764652219,
+      "note": "Full tessellation mean vs FitSkin cheek (spatial mismatch)"
+    },
+    "cheek_roi_only": {
+      "flags": ["--cheek-roi"],
+      "median_de00": 4.662781521705212,
+      "mean_de00": 4.718475,
+      "delta_median_vs_baseline": -0.594,
+      "role": "Spatial: sample inside MediaPipe cheek hull ∩ mesh"
+    },
+    "skin_mask_exposure_only": {
+      "flags": ["--exposure-scale-skin-mask"],
+      "median_de00": 5.296211164185796,
+      "mean_de00": 5.684,
+      "delta_median_vs_baseline": 0.04,
+      "role": "Photometric: flash scale from skin-mask median luma; still mesh ROI for Lab"
+    },
+    "cheek_roi_plus_skin_exposure": {
+      "flags": ["--cheek-roi", "--exposure-scale-skin-mask"],
+      "median_de00": 4.495227943083502,
+      "mean_de00": 4.611309216604493,
+      "delta_median_vs_baseline": -0.761,
+      "increment_vs_cheek_only": -0.168,
+      "increment_vs_skin_only": -0.801,
+      "role": "Combined; skin exposure helps mainly when cheek ROI is active"
+    },
+    "fitskin_lightness_calibration_same_trials": {
+      "flags": ["--cheek-roi", "--exposure-scale-skin-mask", "--fitskin-lightness-calibration"],
+      "median_de00": 3.25203470603957,
+      "note": "Not independent validation; scanner-aligned reporting"
+    }
+  },
+  "methods_text_suggestion": "We report a factorial ablation: cheek ROI alone reduced median ΔE00 from 5.26 to 4.66 (−0.59); skin-mask exposure alone with mesh ROI did not improve the cohort median (5.30). With cheek ROI, adding skin-mask exposure scaling reduced median ΔE00 from 4.66 to 4.50 (−0.17), with larger trial-level gains on P2."
+}

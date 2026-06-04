@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+.DS_Store
+.pytest_cache/
+
+# Local RAW runs (PNGs); paper bundle is committed under figures/
+/flash_noflash_*/
+/flash_tier*/
+/flash_lstsq*/
+
+# Large optional outputs
+/fitskin_scanner_output/
+/skin_lab_output/

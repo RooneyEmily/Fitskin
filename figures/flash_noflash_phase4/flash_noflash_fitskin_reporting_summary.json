@@ -1,0 +1,53 @@
+{
+  "n_trials": 5,
+  "input_mode": "dng",
+  "raw_half_size": 1,
+  "raw_camera_wb": false,
+  "skin_mask": "physio_skin_lab_monk.build_skin_mask_from_mesh (tessellation)",
+  "skin_trims": {
+    "l_star_trim_lo": 0.05,
+    "l_star_trim_hi": 0.05,
+    "a_star_trim_lo": 0.05,
+    "a_star_trim_hi": 0.05,
+    "b_star_trim_lo": 0.05,
+    "b_star_trim_hi": 0.05,
+    "skin_min_chroma_ab": 2.0
+  },
+  "align": "linear RAW u01: ECC + exposure (align_flash_to_noflash_linear)",
+  "raw_note": "DNG/CR2: rawpy linear camera RGB, 99.5% percentile \u2192 u01; Lab via trained camera_rgb_to_xyz when --iphone-calibration set.",
+  "illuminant": "Lu & Drew 2006 log-diff geometric chromaticity (secondary comparison path); flash CCT auto from pure-flash neutrals unless --flash-cct-k > 0",
+  "known_ambient_cct_k": 6546.0,
+  "known_ambient_duv": 0.0017,
+  "primary_skin_metric": "reflectance: sqrt(A \u2299 B) on aligned linear RGB; A = no-flash, B = ECC-aligned exposure-matched flash (practical recipe, not Lu 2006)",
+  "flash_cct_k": "auto",
+  "lu_spectral_sharpening": "matrix",
+  "reflectance": "R = sqrt(A \u2299 B); B = flash after ECC registration and exposure scaling to match A",
+  "lab_reflectance": "linear camera RGB \u2192 XYZ (trained matrix if --iphone-calibration) \u2192 Lab, D65 white",
+  "lab_comparison_paths": "skimage rgb2lab D65 on 8-bit BGR previews (noflash / flash / lu_wb)",
+  "excluded_trials": [
+    "P2_T1"
+  ],
+  "reflectance_exposure_anchor": {
+    "P1": 0.9608414187148837,
+    "P2": 1.3928807956578544
+  },
+  "fitskin_lightness_gain": {
+    "P1": 1.0526785023775376,
+    "P2": 1.0629126918755374
+  },
+  "reflectance_lab_roi": "cheek (MediaPipe hull \u2229 mesh)",
+  "align_exposure": "ECC; flash exposure scale from skin mask median luma (not global scene)",
+  "best_method_vs_fitskin_counts": {
+    "reflectance": 5
+  },
+  "reflectance_cheek_de00_mean": 2.2721589262740953,
+  "reflectance_cheek_de00_median": 2.4694624344574443,
+  "noflash_cheek_de00_mean": 28.649707654675996,
+  "noflash_cheek_de00_median": 25.667781989658945,
+  "flash_aligned_cheek_de00_mean": 29.92490543438141,
+  "flash_aligned_cheek_de00_median": 29.23700758332056,
+  "lu_wb_cheek_de00_mean": 24.42960645925614,
+  "lu_wb_cheek_de00_median": 23.84208563148337,
+  "lu_booth_wb_cheek_de00_mean": 17.998334119948616,
+  "lu_booth_wb_cheek_de00_median": 17.244447332149527
+}

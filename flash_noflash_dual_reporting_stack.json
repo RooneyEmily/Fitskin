@@ -1,0 +1,79 @@
+{
+  "cohort": "5 trials (P1_T1-T3, P2_T2-T3), P2_T1 excluded",
+  "reference": "FitSkin cheek Lab (D65), reflectance_cheek_de00",
+  "production_calibration": "calibration/tier3_affine",
+  "production_command_chart_free": [
+    "python3 flash_no_flash_skin_lab.py",
+    "--iphone-calibration ./calibration/tier3_affine",
+    "--exposure-anchor-from-training",
+    "--cheek-roi",
+    "--exposure-scale-skin-mask",
+    "--exclude-trials P2_T1"
+  ],
+  "production_command_reporting": [
+    "add: --fitskin-lightness-calibration"
+  ],
+  "evolution_table": [
+    {
+      "stage": "Mesh ROI, global exposure, lstsq 3x3",
+      "median_de00": 5.2566040035361885,
+      "mean_de00": 6.849130764652219,
+      "what_changed": "Agreement baseline",
+      "independent_validation": true
+    },
+    {
+      "stage": "Cheek ROI only (lstsq 3x3)",
+      "median_de00": 4.662781521705212,
+      "what_changed": "Spatial correction vs FitSkin cheek sampling",
+      "independent_validation": true
+    },
+    {
+      "stage": "Cheek ROI + skin-mask exposure (lstsq 3x3)",
+      "median_de00": 4.495227943083502,
+      "mean_de00": 4.611309216604493,
+      "what_changed": "Tier 2 recommended chart-free stack",
+      "independent_validation": true
+    },
+    {
+      "stage": "Affine + cheek + skin exposure (chart-free)",
+      "median_de00": 3.4954120604549037,
+      "mean_de00": 3.332874690325462,
+      "what_changed": "Tier 3 offline affine [R,G,B,1]->XYZ calibration",
+      "independent_validation": true,
+      "output_dir": "flash_noflash_tier3_affine_nocal"
+    },
+    {
+      "stage": "Affine + cheek + skin + FitSkin lightness (same trials)",
+      "median_de00": 2.4694624344574443,
+      "mean_de00": 2.2721589262740953,
+      "what_changed": "Pilot reporting calibration; 2 DOF L* gains (P1=1.053, P2=1.063)",
+      "independent_validation": false,
+      "output_dir": "flash_noflash_tier3_affine_fitskin",
+      "note": "Re-run with tier3_affine; supersedes lstsq 3x3 FitSkin row (median 3.25)"
+    },
+    {
+      "stage": "lstsq 3x3 + cheek + skin + FitSkin lightness (same trials)",
+      "median_de00": 2.883293745992489,
+      "mean_de00": 2.72,
+      "fitskin_gains": {"P1": 1.094, "P2": 1.225},
+      "what_changed": "Tier-2 stack + reporting calibration (lstsq matrix only)",
+      "independent_validation": false,
+      "output_dir": "flash_lstsq3_fitskin"
+    },
+    {
+      "stage": "Legacy pilot (flash_noflash_dng_output)",
+      "median_de00": 3.25203470603957,
+      "what_changed": "Earlier run (lstsq 3x3 + FitSkin; cheek/skin flags evolved since)",
+      "note": "Superseded by lstsq+FitSkin 2.88 and affine+FitSkin 2.47 reruns"
+    }
+  ],
+  "paired_comparison_affine_vs_lstsq": {
+    "chart_free": {"lstsq_3x3": 4.495, "affine": 3.495, "delta": -1.0},
+    "fitskin_lightness_same_trials": {"lstsq_3x3": 2.883, "affine": 2.469, "delta": -0.414}
+  },
+  "paper_statements": {
+    "chart_free_agreement": "Primary agreement metric: affine + cheek + skin, median ΔE00 = 3.50 (chart-free, no FitSkin in the fit).",
+    "reporting_calibration": "Same-trial FitSkin lightness alignment on that stack: median 2.47 (not independent validation). This improves the earlier 3.25 pilot because the underlying stack now includes cheek ROI, skin exposure, and affine calibration—not only the lightness gain.",
+    "chart_free_vs_reporting": "Chart-free affine (3.50) remains ~1.0 ΔE00 above scanner-aligned reporting (2.47) on the same trials—expected, since 2.47 uses FitSkin L* medians to set two participant gains."
+  }
+}

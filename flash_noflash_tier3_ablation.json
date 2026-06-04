@@ -1,0 +1,69 @@
+{
+  "inference_stack_fixed": [
+    "--cheek-roi",
+    "--exposure-scale-skin-mask",
+    "--exposure-anchor-from-training",
+    "--known-ambient-cct-k 6546",
+    "--known-ambient-duv 0.0017",
+    "--exclude-trials P2_T1"
+  ],
+  "tier2_reference_median_de00": 4.495227943083502,
+  "tier2_reference_note": "lstsq 3x3 matrix + cheek ROI + skin-mask exposure (iphone17pro_trained)",
+  "tier3_training_ablation": {
+    "baseline_lstsq_3x3": {
+      "train": "unweighted stacked MCC lstsq",
+      "median_de00": 4.495,
+      "delta_median": 0.0,
+      "verdict": "reference"
+    },
+    "issa_lstsq": {
+      "train": "--issa-skin-rows (2 ISSA cheek spectra, unweighted lstsq)",
+      "median_de00": 4.583,
+      "delta_median": 0.088,
+      "verdict": "neutral / slight harm"
+    },
+    "affine": {
+      "train": "--matrix-affine ([R,G,B,1]→XYZ lstsq on MCC only)",
+      "median_de00": 3.495,
+      "delta_median": -1.0,
+      "verdict": "best Tier-3; promoted to tier3_affine/"
+    },
+    "issa_affine": {
+      "train": "--matrix-affine --issa-skin-rows",
+      "median_de00": 3.558,
+      "delta_median": -0.937,
+      "verdict": "good; ISSA rows do not help on top of affine"
+    },
+    "weighted_lstsq": {
+      "train": "--weighted-matrix (MCC Huber-style row weights, no Huber IRLS)",
+      "median_de00": 24.737,
+      "delta_median": 20.242,
+      "verdict": "reject"
+    },
+    "issa_weighted": {
+      "train": "--weighted-matrix --issa-skin-rows",
+      "median_de00": 19.287,
+      "delta_median": 14.792,
+      "verdict": "reject"
+    },
+    "huber_stacked": {
+      "train": "--huber-matrix-stacked --weighted-matrix",
+      "median_de00": 37.621,
+      "delta_median": 33.126,
+      "verdict": "reject"
+    },
+    "huber_issa": {
+      "train": "--huber-matrix-stacked --weighted-matrix --issa-skin-rows",
+      "median_de00": 39.952,
+      "delta_median": 35.456,
+      "verdict": "reject"
+    }
+  },
+  "recommended_production_stack": {
+    "calibration": "calibration/tier3_affine",
+    "inference_flags": ["--cheek-roi", "--exposure-scale-skin-mask", "--exposure-anchor-from-training"],
+    "expected_median_de00_chart_free": 3.5,
+    "fitskin_lightness_cal_same_trials": 3.25
+  },
+  "reproduce": "python3 run_tier3_calibration_ablation.py"
+}
