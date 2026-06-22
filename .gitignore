@@ -14,7 +14,14 @@ venv/
 /flash_noflash_*/
 /flash_tier*/
 /flash_lstsq*/
+/results/
 
 # Large optional outputs
 /fitskin_scanner_output/
 /skin_lab_output/
+mobile_sam.pt
+*.pth
+
+# Generated Pansor manifest (build with scripts/build_pansor_manifest.py)
+/data/pansor/manifest_pansor_fitskin.csv
+/data/pansor/pansor_fitskin_scan_search.json

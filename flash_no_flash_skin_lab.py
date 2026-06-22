@@ -67,6 +67,7 @@ from delta_e_2000 import delta_e_2000
 from flash_noflash_face_roi import cheek_mask_from_landmarks
 
 ROOT = Path(__file__).resolve().parent
+_DEFAULT_NIX_BAG_JSON = ROOT / "calibration" / "sephora_bag_nix_reference.json"
 FLASH_REPO = ROOT.parent / "mabl-flash-illumination"
 if FLASH_REPO.is_dir():
     sys.path.insert(0, str(FLASH_REPO))
@@ -411,6 +412,21 @@ def _subject_key(row: dict) -> str:
     return f"{p}_T{row.get('trial', 0)}"
 
 
+def _float_field(row: dict, key: str) -> float:
+    """Parse manifest numeric field; empty/missing → NaN."""
+    raw = row.get(key, np.nan)
+    if raw is None:
+        return float("nan")
+    s = str(raw).strip()
+    if not s:
+        return float("nan")
+    try:
+        v = float(s)
+    except ValueError:
+        return float("nan")
+    return v if np.isfinite(v) else float("nan")
+
+
 def linear_rgb_to_xyz_d65(rgb_lin: np.ndarray) -> np.ndarray:
     """(H,W,3) linear RGB → XYZ (D65 white; matrix from calibration bundle or sRGB default)."""
     x = np.asarray(rgb_lin, dtype=np.float64)
@@ -723,11 +739,21 @@ def process_flash_pair(
     reflectance_pre_wb: str = "none",
     reflectance_fusion: str = "geometric",
     reflectance_cat: str = "none",
+    bag_cat02: str = "off",
+    nix_bag_reference: Optional[Any] = None,
+    hands_detector: Any = None,
+    bag_sam_segmenter: Any = None,
+    bag_trial: Optional[bool] = None,
+    compare_methods: bool = True,
 ) -> Dict[str, Any]:
     use_skin_exposure = bool(exposure_scale_skin_mask)
+    fl_orig_work: Optional[np.ndarray] = None
+    bag_cat02_info: Dict[str, Any] = {}
+    bag_cat02_applied = False
     if noflash_lin_u01 is not None and flash_lin_u01 is not None:
         nf_work = _resize_linear_max_width(noflash_lin_u01, max_align_width)
         fl_work = _resize_linear_max_width(flash_lin_u01, max_align_width)
+        fl_orig_work = fl_work
         align = align_flash_to_noflash_linear(
             nf_work,
             fl_work,
@@ -754,7 +780,61 @@ def process_flash_pair(
     )
 
     align_exposure_scale_skin: Optional[float] = None
-    if use_skin_exposure and noflash_lin_u01 is not None:
+    lab_mask = cheek_mask if (cheek_roi and cheek_mask is not None) else mask_nf
+
+    try_bag_cat02 = False
+    if bag_cat02 == "on":
+        try_bag_cat02 = True
+    elif bag_cat02 == "auto":
+        if bag_trial is False:
+            bag_cat02_info = {"bag_cat02_status": "skipped_not_bag_trial"}
+        else:
+            try_bag_cat02 = True
+
+    if (
+        try_bag_cat02
+        and noflash_lin_u01 is not None
+        and fl_orig_work is not None
+        and nix_bag_reference is not None
+        and (_CAMERA_RGB_TO_XYZ is not None or _CAMERA_RGB_TO_XYZ_AFFINE is not None)
+    ):
+        from bag_chromatic_correction import (
+            apply_cat02_reflectance_pair,
+            estimate_bag_cat02_matrix,
+        )
+
+        exp_mask = cheek_mask if cheek_mask is not None else mask_nf
+        require_hands_seg = bag_trial is not True
+        try:
+            cat02_P, bag_cat02_info = estimate_bag_cat02_matrix(
+                align.flash_aligned_linear,
+                nf_bgr,
+                face_mesh,
+                nix_bag_reference,
+                hands_detector=hands_detector,
+                sam_segmenter=bag_sam_segmenter,
+                require_hands_in_segment=require_hands_seg,
+            )
+        except ValueError as exc:
+            cat02_P = None
+            bag_cat02_info = {"bag_cat02_status": f"failed: {exc}"}
+        if cat02_P is not None:
+            nf_c, fl_c, align, align_exposure_scale_skin = apply_cat02_reflectance_pair(
+                nf_work,
+                fl_orig_work,
+                align.warp_matrix,
+                exp_mask,
+                cat02_P,
+                use_skin_exposure=use_skin_exposure,
+                ecc_cc=float(align.ecc_cc),
+            )
+            nf_bgr = pr250.linear_rgb_to_preview_bgr(nf_c)
+            fl_bgr = pr250.linear_rgb_to_preview_bgr(fl_c)
+            bag_cat02_applied = True
+        elif bag_cat02 == "on":
+            bag_cat02_info.setdefault("bag_cat02_status", "required_but_failed")
+
+    if not bag_cat02_applied and use_skin_exposure and noflash_lin_u01 is not None:
         exp_mask = cheek_mask if cheek_mask is not None else mask_nf
         align_exposure_scale_skin = estimate_exposure_scale_masked(
             align.noflash_linear,
@@ -772,8 +852,6 @@ def process_flash_pair(
             ecc_cc=align.ecc_cc,
         )
         fl_bgr = pr250.linear_rgb_to_preview_bgr(align.flash_aligned_linear)
-
-    lab_mask = cheek_mask if (cheek_roi and cheek_mask is not None) else mask_nf
 
     nf_refl = align.noflash_linear
     fl_refl = align.flash_aligned_linear
@@ -864,16 +942,26 @@ def process_flash_pair(
         "reflectance_total_scale": (
             float(total_reflectance_scale) if total_reflectance_scale != 1.0 else None
         ),
+        "reflectance_bag_cat02": bag_cat02_applied,
     }
+    for key, val in bag_cat02_info.items():
+        if key == "bag_cat02_P":
+            continue
+        stats[key] = val
 
     method_list: List[Tuple[str, Optional[np.ndarray], Optional[np.ndarray]]] = [
         ("reflectance", albedo_bgr, albedo),
-        ("noflash", nf_bgr, None),
-        ("flash_aligned", fl_bgr, None),
-        ("lu_wb", wb_bgr, None),
     ]
-    if wb_booth_bgr is not None:
-        method_list.append(("lu_booth_wb", wb_booth_bgr, None))
+    if compare_methods:
+        method_list.extend(
+            [
+                ("noflash", nf_bgr, None),
+                ("flash_aligned", fl_bgr, None),
+                ("lu_wb", wb_bgr, None),
+            ]
+        )
+        if wb_booth_bgr is not None:
+            method_list.append(("lu_booth_wb", wb_booth_bgr, None))
 
     scr_wb_bgr: Optional[np.ndarray] = None
     if (
@@ -904,7 +992,8 @@ def process_flash_pair(
         stats["scr_awb_alpha"] = scr.alpha.tolist()
         stats["scr_awb_illuminant_rgb"] = scr.illuminant_rgb.tolist()
         stats["scr_awb_skin_rgb_median"] = scr.skin_rgb_median.tolist()
-        method_list.append(("scr_awb_wb", scr_wb_bgr, None))
+        if compare_methods:
+            method_list.append(("scr_awb_wb", scr_wb_bgr, None))
 
     for key, bgr, lin_src in method_list:
         roi_mask = lab_mask if (lin_src is not None and key == "reflectance") else mask_nf
@@ -1132,6 +1221,40 @@ def main() -> None:
         help="Bradford CAT on reflectance XYZ: scene white = booth Planck or Lu-estimated ambient.",
     )
     ap.add_argument(
+        "--bag-cat02",
+        choices=("off", "auto", "on"),
+        default="auto",
+        help=(
+            "Sephora bag CAT02 on reflectance (auto=Sephora Bag trials only when manifest "
+            "has condition/condition_code; requires --iphone-calibration + NIX JSON)."
+        ),
+    )
+    ap.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Production output: reflectance cheek Lab + bag CAT02 only (no no-flash / Lu / "
+            "SCR comparison columns)."
+        ),
+    )
+    ap.add_argument(
+        "--nix-bag-json",
+        type=Path,
+        default=_DEFAULT_NIX_BAG_JSON,
+        help="NIX Spectro 2 white/black reference for bag stripes (JSON from run_sephora_bag_segmentation_verify).",
+    )
+    ap.add_argument(
+        "--mobile-sam",
+        action="store_true",
+        help="Use MobileSAM for bag segmentation when --bag-cat02 is enabled.",
+    )
+    ap.add_argument(
+        "--mobile-sam-ckpt",
+        type=Path,
+        default=ROOT / "mobile_sam.pt",
+        help="MobileSAM checkpoint path.",
+    )
+    ap.add_argument(
         "--raw-u01-percentile-skin",
         action="store_true",
         help="Scale RAW u01 from skin-mask 99.5th percentile (not full-frame).",
@@ -1178,6 +1301,44 @@ def main() -> None:
         args.known_ambient_cct_k is None or float(args.known_ambient_cct_k) <= 0.0
     ):
         raise SystemExit("--reflectance-cat booth requires --known-ambient-cct-k > 0.")
+
+    nix_bag_ref = None
+    bag_sam_segmenter = None
+    bag_cat02_mode = str(args.bag_cat02)
+    if bag_cat02_mode != "off":
+        if args.iphone_calibration is None:
+            if bag_cat02_mode == "on":
+                raise SystemExit("--bag-cat02 on requires --iphone-calibration")
+            print(
+                "Warning: --bag-cat02 auto disabled (no --iphone-calibration)",
+                file=sys.stderr,
+            )
+            bag_cat02_mode = "off"
+        elif not args.nix_bag_json.is_file():
+            if bag_cat02_mode == "on":
+                raise SystemExit(f"--bag-cat02 on requires NIX reference: {args.nix_bag_json}")
+            print(
+                f"Warning: --bag-cat02 auto disabled (missing {args.nix_bag_json})",
+                file=sys.stderr,
+            )
+            bag_cat02_mode = "off"
+        else:
+            from bag_chromatic_correction import (
+                is_sephora_bag_trial_row,
+                load_nix_bag_reference_json,
+            )
+
+            nix_bag_ref = load_nix_bag_reference_json(args.nix_bag_json)
+            print(f"Bag CAT02: NIX reference from {args.nix_bag_json}", file=sys.stderr)
+            if args.mobile_sam:
+                from sephora_bag_mobile_sam import MobileSamBagSegmenter, mobile_sam_available
+
+                if not mobile_sam_available():
+                    raise SystemExit(f"MobileSAM not available (ckpt: {args.mobile_sam_ckpt})")
+                print(f"Loading MobileSAM for bag segmentation from {args.mobile_sam_ckpt}...")
+                bag_sam_segmenter = MobileSamBagSegmenter(checkpoint=args.mobile_sam_ckpt)
+    else:
+        from bag_chromatic_correction import is_sephora_bag_trial_row
 
     if args.exposure_anchor_from_training:
         if args.iphone_calibration is None:
@@ -1288,269 +1449,309 @@ def main() -> None:
     pass_schedule = (0, 1) if args.fitskin_lightness_calibration else (1,)
 
     mp_fm = mp.solutions.face_mesh
-    with _silence_stderr():
+    mp_hands = mp.solutions.hands
+    use_hands = bag_cat02_mode != "off" and nix_bag_ref is not None
+    stderr_ctx = contextlib.nullcontext() if use_hands else _silence_stderr()
+    with stderr_ctx:
+        hands_ctx = (
+            mp_hands.Hands(
+                static_image_mode=True,
+                max_num_hands=2,
+                min_detection_confidence=0.4,
+            )
+            if use_hands
+            else contextlib.nullcontext()
+        )
         with mp_fm.FaceMesh(
             static_image_mode=True,
             max_num_faces=1,
             refine_landmarks=True,
             min_detection_confidence=0.5,
         ) as face_mesh:
-            for pass_idx in pass_schedule:
-                if pass_idx == 1 and args.fitskin_lightness_calibration:
-                    fitskin_l_gains = _estimate_fitskin_lightness_gains(pass1_rows)
-                    print(
-                        f"FitSkin lightness gains (median L* ratio): {fitskin_l_gains}",
-                        file=sys.stderr,
-                    )
-                for row in manifest_rows:
-                    sid = row.get("subject_id") or _subject_key(row)
-                    if sid in exclude:
-                        if args.debug:
-                            print(f"skip excluded {sid}", file=sys.stderr)
-                        continue
-                    nf_path = Path(row["path_noflash"])
-                    fl_path = Path(row["path_flash"])
-                    if not nf_path.is_file() or not fl_path.is_file():
-                        print(f"skip {sid}: missing image", file=sys.stderr)
-                        continue
-
-                    use_raw = args.input_mode == "dng" or nf_path.suffix in _RAW_EXTS
-                    scr_prior_name: Optional[str] = None
-                    if args.scr_awb:
-                        from scr_awb import resolve_prior_name
-
-                        scr_prior_name = resolve_prior_name(
-                            str(row.get("participant", "")),
-                            sid,
-                            override=args.skin_reflectance_prior,
+            with hands_ctx as hands_detector:
+                for pass_idx in pass_schedule:
+                    if pass_idx == 1 and args.fitskin_lightness_calibration:
+                        fitskin_l_gains = _estimate_fitskin_lightness_gains(pass1_rows)
+                        print(
+                            f"FitSkin lightness gains (median L* ratio): {fitskin_l_gains}",
+                            file=sys.stderr,
                         )
-                    from exposure_anchor import participant_key
-
-                    pk = participant_key(sid, str(row.get("participant", "")))
-                    reflectance_scale: Optional[float] = None
-                    if exposure_anchors is not None:
-                        reflectance_scale = exposure_anchors.get(pk)
-                        if reflectance_scale is None:
-                            print(
-                                f"Warning: no exposure anchor for {pk}; reflectance unscaled",
-                                file=sys.stderr,
-                            )
-                    fitskin_l_gain: Optional[float] = None
-                    if pass_idx == 1 and fitskin_l_gains:
-                        fitskin_l_gain = fitskin_l_gains.get(pk)
-                    try:
-                        if use_raw:
+                    for row in manifest_rows:
+                        sid = row.get("subject_id") or _subject_key(row)
+                        inc = str(row.get("include_in_eval", "yes")).strip().lower()
+                        if inc not in ("yes", "1", "true"):
                             if args.debug:
-                                print(f"RAW {sid}: {nf_path.name} / {fl_path.name}", file=sys.stderr)
-                            if args.raw_u01_percentile_skin:
-                                nf_lin = raw_to_linear_u01_skin_percentile(
-                                    nf_path,
-                                    face_mesh,
-                                    half_size=args.raw_half_size,
-                                    use_camera_wb=args.raw_camera_wb,
-                                    skin_triangulation=args.skin_triangulation,
-                                    skin_exclusion_dilate_iod_fraction=args.skin_exclusion_dilate_iod,
+                                print(f"skip not in eval {sid}", file=sys.stderr)
+                            continue
+                        if sid in exclude:
+                            if args.debug:
+                                print(f"skip excluded {sid}", file=sys.stderr)
+                            continue
+                        nf_path = Path(row["path_noflash"])
+                        fl_path = Path(row["path_flash"])
+                        if not nf_path.is_file() or not fl_path.is_file():
+                            print(f"skip {sid}: missing image", file=sys.stderr)
+                            continue
+
+                        use_raw = args.input_mode == "dng" or nf_path.suffix in _RAW_EXTS
+                        scr_prior_name: Optional[str] = None
+                        if args.scr_awb:
+                            from scr_awb import resolve_prior_name
+
+                            scr_prior_name = resolve_prior_name(
+                                str(row.get("participant", "")),
+                                sid,
+                                override=args.skin_reflectance_prior,
+                            )
+                        from exposure_anchor import participant_key
+
+                        pk = participant_key(sid, str(row.get("participant", "")))
+                        reflectance_scale: Optional[float] = None
+                        if exposure_anchors is not None:
+                            reflectance_scale = exposure_anchors.get(pk)
+                            if reflectance_scale is None:
+                                print(
+                                    f"Warning: no exposure anchor for {pk}; reflectance unscaled",
+                                    file=sys.stderr,
                                 )
-                                fl_lin = raw_to_linear_u01_skin_percentile(
-                                    fl_path,
+                        fitskin_l_gain: Optional[float] = None
+                        if pass_idx == 1 and fitskin_l_gains:
+                            fitskin_l_gain = fitskin_l_gains.get(pk)
+                        try:
+                            if use_raw:
+                                if args.debug:
+                                    print(f"RAW {sid}: {nf_path.name} / {fl_path.name}", file=sys.stderr)
+                                if args.raw_u01_percentile_skin:
+                                    nf_lin = raw_to_linear_u01_skin_percentile(
+                                        nf_path,
+                                        face_mesh,
+                                        half_size=args.raw_half_size,
+                                        use_camera_wb=args.raw_camera_wb,
+                                        skin_triangulation=args.skin_triangulation,
+                                        skin_exclusion_dilate_iod_fraction=args.skin_exclusion_dilate_iod,
+                                    )
+                                    fl_lin = raw_to_linear_u01_skin_percentile(
+                                        fl_path,
+                                        face_mesh,
+                                        half_size=args.raw_half_size,
+                                        use_camera_wb=args.raw_camera_wb,
+                                        skin_triangulation=args.skin_triangulation,
+                                        skin_exclusion_dilate_iod_fraction=args.skin_exclusion_dilate_iod,
+                                    )
+                                else:
+                                    nf_lin = raw_to_linear_u01(
+                                        nf_path,
+                                        half_size=args.raw_half_size,
+                                        use_camera_wb=args.raw_camera_wb,
+                                    )
+                                    fl_lin = raw_to_linear_u01(
+                                        fl_path,
+                                        half_size=args.raw_half_size,
+                                        use_camera_wb=args.raw_camera_wb,
+                                    )
+                                stats = process_flash_pair(
                                     face_mesh,
-                                    half_size=args.raw_half_size,
-                                    use_camera_wb=args.raw_camera_wb,
+                                    noflash_lin_u01=nf_lin,
+                                    flash_lin_u01=fl_lin,
+                                    max_align_width=args.max_align_width,
+                                    motion_ecc=args.motion,
                                     skin_triangulation=args.skin_triangulation,
                                     skin_exclusion_dilate_iod_fraction=args.skin_exclusion_dilate_iod,
+                                    l_star_trim_lo=args.skin_l_star_trim_lo,
+                                    l_star_trim_hi=args.skin_l_star_trim_hi,
+                                    a_star_trim_lo=args.skin_a_star_trim_lo,
+                                    a_star_trim_hi=args.skin_a_star_trim_hi,
+                                    b_star_trim_lo=args.skin_b_star_trim_lo,
+                                    b_star_trim_hi=args.skin_b_star_trim_hi,
+                                    skin_min_chroma_ab=args.skin_min_chroma_ab,
+                                    input_mode="dng",
+                                    flash_cct_k=flash_cct_k,
+                                    lu_sharpening_matrix=lu_sharpening,
+                                    known_ambient_cct_k=known_ambient_cct_k,
+                                    known_ambient_duv=float(args.known_ambient_duv),
+                                    measured_flash_cct_k=measured_flash_cct_k,
+                                    flash_rgb_measured=flash_rgb_measured,
+                                    scr_awb_prior_name=scr_prior_name,
+                                    scr_awb_spectral_sensitivity=scr_spectral_sensitivity,
+                                    scr_awb_wavelengths_nm=scr_wavelengths_nm,
+                                    reflectance_exposure_scale=reflectance_scale,
+                                    reflectance_fitskin_lightness_gain=fitskin_l_gain,
+                                    cheek_roi=args.cheek_roi,
+                                    exposure_scale_skin_mask=args.exposure_scale_skin_mask,
+                                    reflectance_pre_wb=args.reflectance_pre_wb,
+                                    reflectance_fusion=args.reflectance_fusion,
+                                    reflectance_cat=args.reflectance_cat,
+                                    bag_cat02=bag_cat02_mode,
+                                    nix_bag_reference=nix_bag_ref,
+                                    hands_detector=hands_detector if use_hands else None,
+                                    bag_sam_segmenter=bag_sam_segmenter,
+                                    bag_trial=is_sephora_bag_trial_row(row),
+                                    compare_methods=not args.production,
                                 )
                             else:
-                                nf_lin = raw_to_linear_u01(
-                                    nf_path,
-                                    half_size=args.raw_half_size,
-                                    use_camera_wb=args.raw_camera_wb,
+                                nf_bgr = cv2.imread(str(nf_path), cv2.IMREAD_COLOR)
+                                fl_bgr = cv2.imread(str(fl_path), cv2.IMREAD_COLOR)
+                                if nf_bgr is None or fl_bgr is None:
+                                    print(f"skip {sid}: imread failed", file=sys.stderr)
+                                    continue
+                                stats = process_flash_pair(
+                                    face_mesh,
+                                    noflash_bgr=nf_bgr,
+                                    flash_bgr=fl_bgr,
+                                    max_align_width=args.max_align_width,
+                                    motion_ecc=args.motion,
+                                    skin_triangulation=args.skin_triangulation,
+                                    skin_exclusion_dilate_iod_fraction=args.skin_exclusion_dilate_iod,
+                                    l_star_trim_lo=args.skin_l_star_trim_lo,
+                                    l_star_trim_hi=args.skin_l_star_trim_hi,
+                                    a_star_trim_lo=args.skin_a_star_trim_lo,
+                                    a_star_trim_hi=args.skin_a_star_trim_hi,
+                                    b_star_trim_lo=args.skin_b_star_trim_lo,
+                                    b_star_trim_hi=args.skin_b_star_trim_hi,
+                                    skin_min_chroma_ab=args.skin_min_chroma_ab,
+                                    input_mode="jpeg",
+                                    flash_cct_k=flash_cct_k,
+                                    lu_sharpening_matrix=lu_sharpening,
+                                    known_ambient_cct_k=known_ambient_cct_k,
+                                    known_ambient_duv=float(args.known_ambient_duv),
+                                    measured_flash_cct_k=measured_flash_cct_k,
+                                    flash_rgb_measured=flash_rgb_measured,
+                                    scr_awb_prior_name=scr_prior_name if args.scr_awb else None,
+                                    scr_awb_spectral_sensitivity=scr_spectral_sensitivity,
+                                    scr_awb_wavelengths_nm=scr_wavelengths_nm,
+                                    reflectance_exposure_scale=reflectance_scale,
+                                    reflectance_fitskin_lightness_gain=fitskin_l_gain,
+                                    cheek_roi=args.cheek_roi,
+                                    exposure_scale_skin_mask=args.exposure_scale_skin_mask,
+                                    reflectance_pre_wb=args.reflectance_pre_wb,
+                                    reflectance_fusion=args.reflectance_fusion,
+                                    reflectance_cat=args.reflectance_cat,
+                                    bag_cat02=bag_cat02_mode,
+                                    nix_bag_reference=nix_bag_ref,
+                                    hands_detector=hands_detector if use_hands else None,
+                                    bag_sam_segmenter=bag_sam_segmenter,
+                                    bag_trial=is_sephora_bag_trial_row(row),
+                                    compare_methods=not args.production,
                                 )
-                                fl_lin = raw_to_linear_u01(
-                                    fl_path,
-                                    half_size=args.raw_half_size,
-                                    use_camera_wb=args.raw_camera_wb,
-                                )
-                            stats = process_flash_pair(
-                                face_mesh,
-                                noflash_lin_u01=nf_lin,
-                                flash_lin_u01=fl_lin,
-                                max_align_width=args.max_align_width,
-                                motion_ecc=args.motion,
-                                skin_triangulation=args.skin_triangulation,
-                                skin_exclusion_dilate_iod_fraction=args.skin_exclusion_dilate_iod,
-                                l_star_trim_lo=args.skin_l_star_trim_lo,
-                                l_star_trim_hi=args.skin_l_star_trim_hi,
-                                a_star_trim_lo=args.skin_a_star_trim_lo,
-                                a_star_trim_hi=args.skin_a_star_trim_hi,
-                                b_star_trim_lo=args.skin_b_star_trim_lo,
-                                b_star_trim_hi=args.skin_b_star_trim_hi,
-                                skin_min_chroma_ab=args.skin_min_chroma_ab,
-                                input_mode="dng",
-                                flash_cct_k=flash_cct_k,
-                                lu_sharpening_matrix=lu_sharpening,
-                                known_ambient_cct_k=known_ambient_cct_k,
-                                known_ambient_duv=float(args.known_ambient_duv),
-                                measured_flash_cct_k=measured_flash_cct_k,
-                                flash_rgb_measured=flash_rgb_measured,
-                                scr_awb_prior_name=scr_prior_name,
-                                scr_awb_spectral_sensitivity=scr_spectral_sensitivity,
-                                scr_awb_wavelengths_nm=scr_wavelengths_nm,
-                                reflectance_exposure_scale=reflectance_scale,
-                                reflectance_fitskin_lightness_gain=fitskin_l_gain,
-                                cheek_roi=args.cheek_roi,
-                                exposure_scale_skin_mask=args.exposure_scale_skin_mask,
-                                reflectance_pre_wb=args.reflectance_pre_wb,
-                                reflectance_fusion=args.reflectance_fusion,
-                                reflectance_cat=args.reflectance_cat,
-                            )
-                        else:
-                            nf_bgr = cv2.imread(str(nf_path), cv2.IMREAD_COLOR)
-                            fl_bgr = cv2.imread(str(fl_path), cv2.IMREAD_COLOR)
-                            if nf_bgr is None or fl_bgr is None:
-                                print(f"skip {sid}: imread failed", file=sys.stderr)
-                                continue
-                            stats = process_flash_pair(
-                                face_mesh,
-                                noflash_bgr=nf_bgr,
-                                flash_bgr=fl_bgr,
-                                max_align_width=args.max_align_width,
-                                motion_ecc=args.motion,
-                                skin_triangulation=args.skin_triangulation,
-                                skin_exclusion_dilate_iod_fraction=args.skin_exclusion_dilate_iod,
-                                l_star_trim_lo=args.skin_l_star_trim_lo,
-                                l_star_trim_hi=args.skin_l_star_trim_hi,
-                                a_star_trim_lo=args.skin_a_star_trim_lo,
-                                a_star_trim_hi=args.skin_a_star_trim_hi,
-                                b_star_trim_lo=args.skin_b_star_trim_lo,
-                                b_star_trim_hi=args.skin_b_star_trim_hi,
-                                skin_min_chroma_ab=args.skin_min_chroma_ab,
-                                input_mode="jpeg",
-                                flash_cct_k=flash_cct_k,
-                                lu_sharpening_matrix=lu_sharpening,
-                                known_ambient_cct_k=known_ambient_cct_k,
-                                known_ambient_duv=float(args.known_ambient_duv),
-                                measured_flash_cct_k=measured_flash_cct_k,
-                                flash_rgb_measured=flash_rgb_measured,
-                                scr_awb_prior_name=scr_prior_name if args.scr_awb else None,
-                                scr_awb_spectral_sensitivity=scr_spectral_sensitivity,
-                                scr_awb_wavelengths_nm=scr_wavelengths_nm,
-                                reflectance_exposure_scale=reflectance_scale,
-                                reflectance_fitskin_lightness_gain=fitskin_l_gain,
-                                cheek_roi=args.cheek_roi,
-                                exposure_scale_skin_mask=args.exposure_scale_skin_mask,
-                                reflectance_pre_wb=args.reflectance_pre_wb,
-                                reflectance_fusion=args.reflectance_fusion,
-                                reflectance_cat=args.reflectance_cat,
-                            )
-                    except ValueError as ex:
-                        print(f"skip {sid}: {ex}", file=sys.stderr)
-                        continue
-                    except Exception as ex:
-                        print(f"skip {sid}: {ex}", file=sys.stderr)
-                        if args.debug:
-                            raise
-                        continue
-
-                    dbg = stats.pop("_debug")
-                    rec: Dict[str, Any] = {
-                        "subject_id": sid,
-                        "participant": row.get("participant", ""),
-                        "trial": row.get("trial", ""),
-                        "path_noflash": str(nf_path),
-                        "path_flash": str(fl_path),
-                        "fitskin_cheek_L": float(row.get("fitskin_cheek_L", np.nan)),
-                        "fitskin_cheek_a": float(row.get("fitskin_cheek_a", np.nan)),
-                        "fitskin_cheek_b": float(row.get("fitskin_cheek_b", np.nan)),
-                    }
-                    rec.update({k: v for k, v in stats.items() if not k.startswith("_")})
-
-                    if pass_idx == 0 and args.fitskin_lightness_calibration:
-                        lr0 = float(rec.get("reflectance_L", np.nan))
-                        if not np.isfinite(lr0) or lr0 < 1.0 or lr0 > 95.0:
-                            print(
-                                f"Warning: pass-1 reflectance L*={lr0} out of range for {sid}; "
-                                "skipping FitSkin lightness fit row",
-                                file=sys.stderr,
-                            )
-                        else:
-                            pass1_rows.append(
-                                {
-                                    "subject_id": sid,
-                                    "participant": row.get("participant", ""),
-                                    "reflectance_L": lr0,
-                                    "fitskin_cheek_L": rec.get("fitskin_cheek_L"),
-                                }
-                            )
-                        continue
-
-                    for method in (
-                        "reflectance",
-                        "noflash",
-                        "flash_aligned",
-                        "lu_wb",
-                        "lu_booth_wb",
-                        "scr_awb_wb",
-                    ):
-                        if f"{method}_L" not in rec:
+                        except ValueError as ex:
+                            print(f"skip {sid}: {ex}", file=sys.stderr)
                             continue
-                        rec[f"{method}_cheek_de00"] = _de00_cheek(
-                            rec[f"{method}_L"],
-                            rec[f"{method}_a"],
-                            rec[f"{method}_b"],
-                            rec["fitskin_cheek_L"],
-                            rec["fitskin_cheek_a"],
-                            rec["fitskin_cheek_b"],
+                        except Exception as ex:
+                            print(f"skip {sid}: {ex}", file=sys.stderr)
+                            if args.debug:
+                                raise
+                            continue
+
+                        dbg = stats.pop("_debug")
+                        rec: Dict[str, Any] = {
+                            "subject_id": sid,
+                            "participant": row.get("participant", ""),
+                            "trial": row.get("trial", ""),
+                            "condition": row.get("condition", ""),
+                            "condition_code": row.get("condition_code", ""),
+                            "path_noflash": str(nf_path),
+                            "path_flash": str(fl_path),
+                            "fitskin_cheek_L": _float_field(row, "fitskin_cheek_L"),
+                            "fitskin_cheek_a": _float_field(row, "fitskin_cheek_a"),
+                            "fitskin_cheek_b": _float_field(row, "fitskin_cheek_b"),
+                        }
+                        rec.update({k: v for k, v in stats.items() if not k.startswith("_")})
+
+                        if pass_idx == 0 and args.fitskin_lightness_calibration:
+                            lr0 = float(rec.get("reflectance_L", np.nan))
+                            if not np.isfinite(lr0) or lr0 < 1.0 or lr0 > 95.0:
+                                print(
+                                    f"Warning: pass-1 reflectance L*={lr0} out of range for {sid}; "
+                                    "skipping FitSkin lightness fit row",
+                                    file=sys.stderr,
+                                )
+                            else:
+                                pass1_rows.append(
+                                    {
+                                        "subject_id": sid,
+                                        "participant": row.get("participant", ""),
+                                        "reflectance_L": lr0,
+                                        "fitskin_cheek_L": rec.get("fitskin_cheek_L"),
+                                    }
+                                )
+                            continue
+
+                        de00_methods = ("reflectance",) if args.production else (
+                            "reflectance",
+                            "noflash",
+                            "flash_aligned",
+                            "lu_wb",
+                            "lu_booth_wb",
+                            "scr_awb_wb",
                         )
+                        for method in de00_methods:
+                            if f"{method}_L" not in rec:
+                                continue
+                            rec[f"{method}_cheek_de00"] = _de00_cheek(
+                                rec[f"{method}_L"],
+                                rec[f"{method}_a"],
+                                rec[f"{method}_b"],
+                                rec["fitskin_cheek_L"],
+                                rec["fitskin_cheek_a"],
+                                rec["fitskin_cheek_b"],
+                            )
 
-                    if args.write_overlays:
-                        psl.write_skin_sampling_overlay_png(
-                            overlay_dir / f"{sid}_noflash_skin.png",
-                            dbg["noflash_bgr"],
-                            dbg["oval_pts"],
-                            dbg["kept_tris"],
-                            dbg["mask"],
-                            dbg["excl_dil"],
-                            mesh_xy=dbg["mesh_xy"],
-                            max_width=args.overlay_max_width,
+                        if args.write_overlays:
+                            psl.write_skin_sampling_overlay_png(
+                                overlay_dir / f"{sid}_noflash_skin.png",
+                                dbg["noflash_bgr"],
+                                dbg["oval_pts"],
+                                dbg["kept_tris"],
+                                dbg["mask"],
+                                dbg["excl_dil"],
+                                mesh_xy=dbg["mesh_xy"],
+                                max_width=args.overlay_max_width,
+                            )
+
+                        sub = args.out_dir / sid
+                        sub.mkdir(parents=True, exist_ok=True)
+                        cv2.imwrite(str(sub / "noflash_aligned.png"), dbg["noflash_bgr"])
+                        cv2.imwrite(str(sub / "flash_aligned.png"), dbg["flash_bgr"])
+                        cv2.imwrite(str(sub / "reflectance_preview.png"), dbg["albedo_bgr"])
+                        if not args.production:
+                            cv2.imwrite(str(sub / "lu_wb.png"), dbg["wb_bgr"])
+                            if dbg.get("scr_wb_bgr") is not None:
+                                cv2.imwrite(str(sub / "scr_awb_wb.png"), dbg["scr_wb_bgr"])
+
+                        with (sub / "summary.json").open("w", encoding="utf-8") as jf:
+                            json.dump(
+                                {
+                                    k: v
+                                    for k, v in rec.items()
+                                    if isinstance(v, (int, float, str, bool)) or v is None
+                                },
+                                jf,
+                                indent=2,
+                            )
+
+                        rows_out.append(rec)
+                        de_str = (
+                            f"{rec['reflectance_cheek_de00']:.2f}"
+                            if np.isfinite(rec["reflectance_cheek_de00"])
+                            else "n/a"
                         )
-
-                    sub = args.out_dir / sid
-                    sub.mkdir(parents=True, exist_ok=True)
-                    cv2.imwrite(str(sub / "noflash_aligned.png"), dbg["noflash_bgr"])
-                    cv2.imwrite(str(sub / "flash_aligned.png"), dbg["flash_bgr"])
-                    cv2.imwrite(str(sub / "lu_wb.png"), dbg["wb_bgr"])
-                    cv2.imwrite(str(sub / "reflectance_preview.png"), dbg["albedo_bgr"])
-                    if dbg.get("scr_wb_bgr") is not None:
-                        cv2.imwrite(str(sub / "scr_awb_wb.png"), dbg["scr_wb_bgr"])
-
-                    with (sub / "summary.json").open("w", encoding="utf-8") as jf:
-                        json.dump(
-                            {
-                                k: v
-                                for k, v in rec.items()
-                                if isinstance(v, (int, float, str, bool)) or v is None
-                            },
-                            jf,
-                            indent=2,
+                        bag_tag = ""
+                        if rec.get("reflectance_bag_cat02"):
+                            bag_tag = "  bag_cat02=applied"
+                        elif bag_cat02_mode != "off":
+                            bag_tag = f"  bag_cat02={rec.get('bag_cat02_status', 'skipped')}"
+                        print(
+                            f"{sid}: ambient CCT={rec['ambient_cct_k']:.0f}K  "
+                            f"flash CCT={rec['flash_cct_k']:.0f}K ({rec['flash_cct_source']})  "
+                            f"reflectance L*a*b*=({rec['reflectance_L']:.1f},{rec['reflectance_a']:.1f},{rec['reflectance_b']:.1f})  "
+                            f"ΔE00 vs FitSkin={de_str}{bag_tag}",
+                            flush=True,
                         )
-
-                    rows_out.append(rec)
-                    de_str = (
-                        f"{rec['reflectance_cheek_de00']:.2f}"
-                        if np.isfinite(rec["reflectance_cheek_de00"])
-                        else "n/a"
-                    )
-                    print(
-                        f"{sid}: ambient CCT={rec['ambient_cct_k']:.0f}K  "
-                        f"flash CCT={rec['flash_cct_k']:.0f}K ({rec['flash_cct_source']})  "
-                        f"reflectance L*a*b*=({rec['reflectance_L']:.1f},{rec['reflectance_a']:.1f},{rec['reflectance_b']:.1f})  "
-                        f"ΔE00 vs FitSkin={de_str}",
-                        flush=True,
-                    )
     if not rows_out:
         raise SystemExit("No rows processed.")
 
-    _annotate_best_method_vs_fitskin(rows_out)
+    if not args.production:
+        _annotate_best_method_vs_fitskin(rows_out)
 
     csv_path = args.out_dir / "flash_noflash_skin_lab.csv"
     fieldnames = list(rows_out[0].keys())
@@ -1612,7 +1813,11 @@ def main() -> None:
         "fitskin_scan_csv": str(args.fitskin_scan_csv) if not args.no_fitskin else None,
         "fitskin_mapping_csv": str(args.fitskin_mapping_csv) if not args.no_fitskin else None,
     }
-    summary_methods = ("reflectance", "noflash", "flash_aligned", "lu_wb", "lu_booth_wb", "scr_awb_wb")
+    summary_methods = (
+        ("reflectance",)
+        if args.production
+        else ("reflectance", "noflash", "flash_aligned", "lu_wb", "lu_booth_wb", "scr_awb_wb")
+    )
     if args.exposure_anchor_from_training and exposure_anchors:
         summary["reflectance_exposure_anchor"] = exposure_anchors
     if args.fitskin_lightness_calibration and fitskin_l_gains:
@@ -1629,15 +1834,25 @@ def main() -> None:
         summary["reflectance_fusion"] = args.reflectance_fusion
     if args.reflectance_cat != "none":
         summary["reflectance_cat"] = args.reflectance_cat
+    if bag_cat02_mode != "off":
+        summary["bag_cat02"] = bag_cat02_mode
+        summary["bag_cat02_algorithm"] = "cat02_bag"
+        summary["nix_bag_json"] = str(args.nix_bag_json.resolve())
+        n_applied = sum(1 for r in rows_out if r.get("reflectance_bag_cat02"))
+        summary["bag_cat02_applied_trials"] = n_applied
+    if args.production:
+        summary["production"] = True
+        summary["primary_method"] = "reflectance + cat02_bag (Sephora Bag trials only)"
     if args.raw_u01_percentile_skin:
         summary["raw_u01_scale"] = "skin-mask 99.5th percentile"
-    best_counts: Dict[str, int] = {}
-    for r in rows_out:
-        m = str(r.get("best_method_vs_fitskin", ""))
-        if m:
-            best_counts[m] = best_counts.get(m, 0) + 1
-    if best_counts:
-        summary["best_method_vs_fitskin_counts"] = best_counts
+    if not args.production:
+        best_counts: Dict[str, int] = {}
+        for r in rows_out:
+            m = str(r.get("best_method_vs_fitskin", ""))
+            if m:
+                best_counts[m] = best_counts.get(m, 0) + 1
+        if best_counts:
+            summary["best_method_vs_fitskin_counts"] = best_counts
     if args.scr_awb:
         summary["scr_awb"] = (
             "Zhou et al. 2025 SCR-AWB: M @ alpha = median skin RGB; "

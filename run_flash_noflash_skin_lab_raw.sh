@@ -39,11 +39,26 @@ if [[ "${IMPROVED_PIPELINE:-1}" != "0" ]]; then
     IMPROVED_ARGS+=(--reflectance-pre-wb booth)
   fi
 fi
+BAG_CAT02_ARGS=()
+if [[ "${BAG_CAT02:-auto}" != "off" ]]; then
+  BAG_CAT02_ARGS=(--bag-cat02 "${BAG_CAT02:-auto}")
+  if [[ "${MOBILE_SAM:-1}" != "0" ]]; then
+    BAG_CAT02_ARGS+=(--mobile-sam)
+  fi
+fi
+PRODUCTION_ARGS=()
+if [[ "${PRODUCTION:-0}" != "0" ]]; then
+  PRODUCTION_ARGS=(--production)
+fi
+RAW_WB_ARGS=(--raw-camera-wb)
 python3 flash_no_flash_skin_lab.py \
   "${EXTRA_CALIB[@]}" \
   "${SCR_AWB_ARGS[@]}" \
   "${EXPOSURE_ANCHOR_ARGS[@]}" \
   "${IMPROVED_ARGS[@]}" \
+  "${BAG_CAT02_ARGS[@]}" \
+  "${PRODUCTION_ARGS[@]}" \
+  "${RAW_WB_ARGS[@]}" \
   --data-root "$DATA_ROOT" \
   --input-mode dng \
   --out-dir "$OUT_DIR" \

@@ -11,6 +11,25 @@ Chart-free **flash / no-flash** geometric reflectance on iPhone DNG pairs, compa
 
 Cohort: $N=5$ trials (P1 T1–T3, P2 T2–T3; P2 T1 excluded).
 
+## Pansor bag CAT02 (production extension)
+
+Validated on the **Pansor iPhone cohort** (2026-06-16). On Sephora Bag trials, in-scene **`cat02_bag`** chromatic correction improves mean ΔE₀₀ vs FitSkin from **6.50 → 5.02** (6 bag trials). ColorChecker trials stay uncorrected.
+
+See [`docs/PANSOR_BAG_CAT02.md`](docs/PANSOR_BAG_CAT02.md) and pinned summary [`data/pansor/pansor_ablation_summary.json`](data/pansor/pansor_ablation_summary.json).
+
+```bash
+export PANSOR_DATA_ROOT="/path/to/Pansor Images"
+python3 scripts/build_pansor_manifest.py --data-root "$PANSOR_DATA_ROOT"
+
+python3 flash_no_flash_skin_lab.py \
+  --manifest data/pansor/manifest_pansor_fitskin.csv \
+  --input-mode dng \
+  --iphone-calibration ./calibration/tier3_affine \
+  --cheek-roi --exposure-scale-skin-mask \
+  --raw-camera-wb --bag-cat02 auto --production \
+  --out-dir ./results/pansor_production
+```
+
 ## Install
 
 ```bash
@@ -64,9 +83,12 @@ Use `--no-fitskin` for pipeline-only Lab output.
 | Path | Role |
 |------|------|
 | `flash_no_flash_skin_lab.py` | Main pipeline |
+| `bag_chromatic_correction.py` | Sephora bag CAT02 (Pansor production) |
 | `run_flash_noflash_skin_lab_raw.sh` | Production wrapper |
+| `evaluate_pansor_ablation.py` | Pansor streamlined ablation |
 | `bundle_flash_noflash_phase4.py` | Pin `figures/flash_noflash_phase4/` |
 | `docs/FLASH_NOFLASH_SKIN_METHODS.md` | Paper methods text |
+| `docs/PANSOR_BAG_CAT02.md` | Pansor bag CAT02 production notes |
 | `figures/flash_noflash_phase4/tables/*.tex` | LaTeX tables |
 | `flash_noflash_dual_reporting_stack.json` | Evolution + wording |
 
@@ -81,4 +103,3 @@ If you use this code, cite the associated manuscript and pin the git tag or comm
 ## Related repos
 
 - [RooneyEmily/color-emotion-physio](https://github.com/RooneyEmily/color-emotion-physio) — broader physio / circumplex work
-- [RooneyEmily/emonet_feature_extraction](https://github.com/RooneyEmily/emonet_feature_extraction) — EmoNet integration mirror

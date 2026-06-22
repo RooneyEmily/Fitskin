@@ -1,0 +1,28 @@
+{
+  "cohort": "Pansor iPhone DNG exports (2026-06-16)",
+  "fitskin_reference": "May 20 median cheek (cross-session)",
+  "production_bag_mode": "cat02_bag",
+  "n_trials": 12,
+  "n_bag_trials": 6,
+  "n_cc_trials": 6,
+  "summary_bag_trials_only": {
+    "none": {
+      "n": 6,
+      "mean_de00": 6.504375572887985,
+      "median_de00": 6.5220235015720185
+    },
+    "cat02_bag": {
+      "n": 6,
+      "mean_de00": 5.0165375338849785,
+      "median_de00": 4.613402504196212
+    }
+  },
+  "summary_cc_trials_only": {
+    "none": {
+      "n": 6,
+      "mean_de00": 5.389110012181739,
+      "median_de00": 5.300769700723527
+    }
+  },
+  "production_rule": "cat02_bag on Sephora Bag trials only; CC trials stay none (in-scene CC correction hurt)"
+}
