@@ -58,17 +58,21 @@ Cross-session validation on June 2026 iPhone captures — **higher absolute ΔE*
 
 ## Install
 
+**macOS:** Apple’s built-in Python 3.9 often breaks `pip install`. Use **[`docs/INSTALL_MAC.md`](docs/INSTALL_MAC.md)** or run `bash scripts/setup_mac.sh` after installing Python 3.12 from [python.org](https://www.python.org/downloads/).
+
+**Linux / Windows:**
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 python3 -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-**Python:** 3.10–3.12 recommended. 3.9 works but is slower to install.
+**Python:** 3.10–3.12 recommended. Avoid macOS Command Line Tools Python 3.9.
 
-**If `pip install` hangs on “Building wheel for opencv-contrib-python”:** that means pip is compiling OpenCV from source (often 20–40 minutes on a Mac). Cancel with Ctrl+C, run `python3 -m pip install --upgrade pip`, `git pull`, and install again — `requirements.txt` pins OpenCV below 4.13 so pre-built wheels are used instead.
+**If `pip install` hangs on “Building wheel for opencv-contrib-python”:** upgrade pip, `git pull`, reinstall — `requirements.txt` pins OpenCV below 4.13 so pre-built wheels are used.
 
-**First install downloads ~250 MB** (OpenCV, MediaPipe, JAX). Expect a few minutes on good Wi‑Fi, not half an hour.
+**First install downloads ~250 MB** (OpenCV, MediaPipe, JAX). Expect a few minutes on good Wi‑Fi.
 
 ## Other entry points (optional)
 
