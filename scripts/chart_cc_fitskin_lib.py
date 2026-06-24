@@ -16,9 +16,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-EMONET = Path(__file__).resolve().parents[2] / "emonet_feature_extraction"
-if str(EMONET) not in sys.path:
-    sys.path.insert(0, str(EMONET))
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import mediapipe as mp
 import physio_skin_lab_monk as psl

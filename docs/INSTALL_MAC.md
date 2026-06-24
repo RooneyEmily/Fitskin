@@ -9,10 +9,14 @@ Apple’s **Command Line Tools Python 3.9** often fails with:
 
 ## One-time: install Python 3.12
 
-1. Go to https://www.python.org/downloads/
-2. Download **Python 3.12** macOS installer
+python.org no longer ships macOS installers for 3.12.11+ (source only). Use **3.12.10** (last Mac installer):
+
+1. Open https://www.python.org/downloads/release/python-31210/
+2. Under **Files**, download **macOS 64-bit universal2 installer** (`.pkg`)
 3. Run it (default options are fine)
 4. Quit and reopen Terminal
+
+**Alternative (Homebrew):** `brew install python@3.12` then use `python3.12` or `/opt/homebrew/bin/python3.12`.
 
 ## Clone and run (use a simple path — no spaces)
 

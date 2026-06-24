@@ -25,3 +25,7 @@ mobile_sam.pt
 # Generated Pansor manifest (build with scripts/build_pansor_manifest.py)
 /data/pansor/manifest_pansor_fitskin.csv
 /data/pansor/pansor_fitskin_scan_search.json
+
+# Local pipeline outputs
+/pipeline4_output/
+/chart_cc_output/

@@ -43,6 +43,30 @@ Output: `pipeline4_output/flash_noflash_skin_lab.csv`
 
 ---
 
+## Chart CC pipeline (ColorChecker in scene)
+
+Uses the **chart in the photo** for white balance + 3×3 correction (not flash/no-flash reflectance).
+
+```bash
+python3 run_chart_cc.py
+```
+
+Bundled JPEGs: `data/chart_cc_jpeg/` (~87 MB). Expected median **ΔE₀₀ ≈ 5.2** vs FitSkin cheek (6 trials).
+
+Outputs under `chart_cc_output/`:
+
+| Path | Content |
+|------|---------|
+| `comparison.csv` | Per-trial Lab + ΔE vs FitSkin |
+| `summary.json` | Mean/median ΔE₀₀ |
+| `skin_mask_overlays/noflash/` | **Face mesh + cheek segmentation** on no-flash frames |
+| `skin_mask_overlays/flash/` | Same overlays on flash frames |
+| `skin_lab_histograms/` | L\*, a\*, b\* histogram panels |
+
+Skip overlays: `python3 run_chart_cc.py --no-overlays`
+
+---
+
 **Paper bundle (frozen tables):** [`figures/flash_noflash_phase4/`](figures/flash_noflash_phase4/)
 
 | Mode | Median ΔE₀₀ vs FitSkin cheek | Independent validation? |
