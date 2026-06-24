@@ -29,6 +29,7 @@ from mcc24_canonical_d65 import (
     load_canonical_lab_d65,
     load_canonical_xyz_d65,
 )
+from mcc24_classic import WHITE_PATCH_INDEX
 
 # Cheek landmark indices (MediaPipe face mesh) for FitSkin-aligned sampling
 CHEEK_LANDMARKS = (
@@ -82,12 +83,16 @@ def chart_detect_and_wb(bgr: np.ndarray) -> Tuple[Optional[np.ndarray], Optional
 def fit_cc_matrix(
     patch_rgb_255: np.ndarray,
     *,
-    huber: bool = True,
+    huber: bool = False,
     upweight_skin_neutral: bool = True,
+    affine: bool = False,
 ) -> Tuple[np.ndarray, float, np.ndarray]:
     """
-    3×3 linear RGB (linear sRGB) → canonical D65 XYZ (Y~0–100).
+    3×3 (or 3×4 affine) linear RGB → canonical D65 XYZ (Y~0–100).
     Returns ``(M, mean_patch_deltaE_ab, pred_xyz)``.
+
+    Default is plain weighted least squares (Huber off) — best median ΔE₀₀ on the
+    bundled JPEG cohort vs Huber IRWS.
     """
     ref_xyz = load_canonical_xyz_d65()
     lin = vchart.srgb_255_to_linear(patch_rgb_255)
@@ -96,20 +101,30 @@ def fit_cc_matrix(
         row_w = pr250.build_patch_lstsq_row_weights(anchor_weight=2.5, skin_weight=1.0)
     if huber:
         M, _, _ = pr250.fit_rgb_to_xyz_lstsq_huber_irls(
-            lin, ref_xyz, with_intercept=False, row_weights=row_w
+            lin, ref_xyz, with_intercept=affine, row_weights=row_w
         )
     else:
-        M = pr250.fit_rgb_to_xyz_lstsq(lin, ref_xyz, with_intercept=False, row_weights=row_w)
-    pred = lin @ M
-    de = pr250.per_patch_delta_e_ab(lin, ref_xyz, M, False)
+        M = pr250.fit_rgb_to_xyz_lstsq(
+            lin, ref_xyz, with_intercept=affine, row_weights=row_w
+        )
+    if affine:
+        aug = np.column_stack([lin, np.ones((lin.shape[0], 1), dtype=np.float64)])
+        pred = aug @ M
+    else:
+        pred = lin @ M
+    de = pr250.per_patch_delta_e_ab(lin, ref_xyz, M, affine)
     return M, float(np.mean(de)), pred
 
 
 def apply_cc_to_bgr(wb_bgr: np.ndarray, M: np.ndarray) -> np.ndarray:
-    """WB BGR uint8 → XYZ D65 image (H,W,3), Bradford CAT from scene white to D65."""
+    """WB BGR uint8 → D65 XYZ image (H,W,3) via chart 3×3 / 3×4 matrix + legacy Bradford normalize."""
     rgb255 = cv2.cvtColor(wb_bgr, cv2.COLOR_BGR2RGB).astype(np.float64)
     lin = vchart.srgb_255_to_linear(rgb255)
-    xyz = lin @ M
+    if M.shape[0] == 4:
+        flat = np.column_stack([lin.reshape(-1, 3), np.ones((lin.shape[0] * lin.shape[1], 1))])
+        xyz = (flat @ M).reshape(lin.shape[0], lin.shape[1], 3)
+    else:
+        xyz = lin @ M
     y_white = max(float(CANONICAL_WHITE_XYZ_D65[1]), 1e-12)
     ws = CANONICAL_WHITE_XYZ_D65 / y_white
     return pr250.apply_bradford_cat_hwc(xyz / y_white, ws, D65_XYZN)
@@ -168,7 +183,8 @@ def process_one_image(
     l_trim: float = 0.05,
     min_chroma: float = 2.0,
     roi: str = "mesh",
-    huber: bool = True,
+    huber: bool = False,
+    affine: bool = False,
     write_overlay: Optional[Path] = None,
     write_lab_histogram: Optional[Path] = None,
     write_ab_histogram_stem: Optional[Path] = None,
@@ -181,7 +197,7 @@ def process_one_image(
     if wb is None:
         return {"chart_ok": False, "status": status}
 
-    M, patch_de_mean, pred_xyz = fit_cc_matrix(patches, huber=huber)
+    M, patch_de_mean, pred_xyz = fit_cc_matrix(patches, huber=huber, affine=affine)
     xyz_img = apply_cc_to_bgr(wb, M)
 
     rgb = cv2.cvtColor(wb, cv2.COLOR_BGR2RGB)
@@ -200,7 +216,9 @@ def process_one_image(
     ref_xyz = load_canonical_xyz_d65()
     ref_lab = load_canonical_lab_d65()
     lin_p = vchart.srgb_255_to_linear(patches)
-    patch_lab_fit = np.array([pr250.xyz_to_lab(pred_xyz[i], D65_XYZN) for i in range(24)])
+    patch_lab_fit = np.array(
+        [pr250.xyz_to_lab(pred_xyz[i], pred_xyz[WHITE_PATCH_INDEX]) for i in range(24)]
+    )
 
     rois: Dict[str, np.ndarray] = {"mesh": mesh_mask}
     if roi in ("cheek", "both"):

@@ -115,7 +115,8 @@ def main() -> None:
     ap.add_argument("--skin-l-trim", type=float, default=0.05)
     ap.add_argument("--skin-min-chroma", type=float, default=2.0)
     ap.add_argument("--roi", choices=("mesh", "cheek", "both"), default="cheek")
-    ap.add_argument("--no-huber", action="store_true")
+    ap.add_argument("--huber", action="store_true", help="Huber IRWS fit (default: plain weighted lstsq)")
+    ap.add_argument("--affine", action="store_true", help="3×4 affine RGB→XYZ fit")
     ap.add_argument(
         "--no-overlays",
         action="store_true",
@@ -191,7 +192,8 @@ def main() -> None:
                             l_trim=args.skin_l_trim,
                             min_chroma=args.skin_min_chroma,
                             roi=args.roi,
-                            huber=not args.no_huber,
+                            huber=args.huber,
+                            affine=args.affine,
                             write_overlay=ovp,
                             write_lab_histogram=hist,
                             write_ab_histogram_stem=ab_stem,

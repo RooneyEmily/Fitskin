@@ -51,7 +51,10 @@ Uses the **chart in the photo** for white balance + 3×3 correction (not flash/n
 python3 run_chart_cc.py
 ```
 
-Bundled JPEGs: `data/chart_cc_jpeg/` (~87 MB). Expected median **ΔE₀₀ ≈ 5.2** vs FitSkin cheek (6 trials).
+Bundled JPEGs: `data/chart_cc_jpeg/` (~87 MB). Expected median **ΔE₀₀ ≈ 4.9** vs FitSkin cheek (6 trials).
+
+On the **same JPEG images**, chart CC (~5) beats chart-free flash/no-flash (~11.5 ΔE₀₀).
+Pipeline 4 on **booth DNG** (no chart in frame) reaches ~3.5 — different capture, not comparable.
 
 Outputs under `chart_cc_output/`:
 
