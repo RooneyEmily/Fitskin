@@ -1,6 +1,9 @@
-numpy>=1.24
-opencv-python>=4.8
-rawpy>=0.19
-scikit-image>=0.22
-mediapipe>=0.10,<0.10.22
-matplotlib>=3.8
+# Use pre-built wheels (avoid 20–40 min compiles on macOS).
+# Always run first:  python3 -m pip install --upgrade pip
+numpy>=1.24,<2.1
+opencv-python>=4.8,<4.13
+opencv-contrib-python>=4.8,<4.13
+rawpy>=0.19,<0.28
+scikit-image>=0.22,<0.27
+mediapipe==0.10.21
+matplotlib>=3.8,<3.11

@@ -10,6 +10,7 @@ Everything needed is in this repo: code, calibration, FitSkin reference Lab, and
 git clone https://github.com/RooneyEmily/Fitskin.git
 cd Fitskin
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m pip install --upgrade pip
 pip install -r requirements.txt
 
 # Full 5-trial cohort (bundled RAW under data/phase4_booth_raw/)
@@ -59,8 +60,15 @@ Cross-session validation on June 2026 iPhone captures — **higher absolute ΔE*
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
+python3 -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+**Python:** 3.10–3.12 recommended. 3.9 works but is slower to install.
+
+**If `pip install` hangs on “Building wheel for opencv-contrib-python”:** that means pip is compiling OpenCV from source (often 20–40 minutes on a Mac). Cancel with Ctrl+C, run `python3 -m pip install --upgrade pip`, `git pull`, and install again — `requirements.txt` pins OpenCV below 4.13 so pre-built wheels are used instead.
+
+**First install downloads ~250 MB** (OpenCV, MediaPipe, JAX). Expect a few minutes on good Wi‑Fi, not half an hour.
 
 ## Other entry points (optional)
 
