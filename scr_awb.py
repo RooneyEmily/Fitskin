@@ -22,12 +22,18 @@ from skin_reflectance_priors import SkinReflectancePrior, load_prior
 
 ROOT = Path(__file__).resolve().parent
 FLASH_REPO = ROOT.parent / "mabl-flash-illumination"
-if FLASH_REPO.is_dir():
-    sys.path.insert(0, str(FLASH_REPO))
 
 try:
-    from src.lu2006_ambient import _planck_rgb_linear  # type: ignore
+    from vendor.flash_align.lu2006_ambient import _planck_rgb_linear
 except ImportError:
+    if FLASH_REPO.is_dir():
+        sys.path.insert(0, str(FLASH_REPO))
+    try:
+        from src.lu2006_ambient import _planck_rgb_linear  # type: ignore
+    except ImportError:
+        _planck_rgb_linear = None  # type: ignore
+
+if _planck_rgb_linear is None:
 
     def _planck_rgb_linear(cct_k: float) -> np.ndarray:
         """Fallback Planck → linear sRGB if mabl-flash-illumination is missing."""

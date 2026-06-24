@@ -16,9 +16,14 @@ D65_CCT_K = 6504.0
 def planck_xyz_y1(cct_k: float, duv: float = 0.0) -> np.ndarray:
     """CIE XYZ of Planckian illuminant (Y=1), 10 nm integration."""
     try:
-        from src.lu2006_ambient import planck_rgb_from_cct_duv  # type: ignore
+        from vendor.flash_align.lu2006_ambient import planck_rgb_from_cct_duv
     except ImportError:
-        raise ImportError("mabl-flash-illumination required for planck_rgb_from_cct_duv")
+        try:
+            from src.lu2006_ambient import planck_rgb_from_cct_duv  # type: ignore
+        except ImportError as e:
+            raise ImportError(
+                "vendor.flash_align or mabl-flash-illumination required for planck_rgb_from_cct_duv"
+            ) from e
 
     rgb = np.maximum(
         np.asarray(planck_rgb_from_cct_duv(float(cct_k), float(duv)), dtype=np.float64), _EPS

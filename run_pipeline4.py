@@ -17,6 +17,9 @@ Expected folder layout::
 
 Usage (one trial — two DNG files):
 
+    python3 run_pipeline4.py --trial P1_T2 --noflash noflash.dng --flash flash.dng
+
+    # or trailing positionals (no --out-dir between trial id and paths):
     python3 run_pipeline4.py --trial P1_T2 noflash.dng flash.dng
 
 FitSkin cheek reference Lab for each trial is bundled in
@@ -38,6 +41,7 @@ ROOT = Path(__file__).resolve().parent
 PIPELINE = ROOT / "flash_no_flash_skin_lab.py"
 CAL_DIR = ROOT / "calibration" / "tier3_affine"
 FITSKIN_REF = ROOT / "data" / "phase4_fitskin_reference.csv"
+BUNDLED_RAW = ROOT / "data" / "phase4_booth_raw"
 DEFAULT_OUT = ROOT / "pipeline4_output"
 
 
@@ -169,7 +173,14 @@ def main() -> None:
         metavar="ID",
         help="Single-trial mode: subject id from reference CSV (e.g. P1_T2).",
     )
-    ap.add_argument("dng_files", nargs="*", type=Path, help="With --trial: noflash.dng flash.dng")
+    ap.add_argument("--noflash", type=Path, help="Single trial: no-flash DNG path.")
+    ap.add_argument("--flash", type=Path, help="Single trial: flash DNG path.")
+    ap.add_argument(
+        "dng_files",
+        nargs="*",
+        type=Path,
+        help="With --trial (alternate): noflash.dng flash.dng as trailing positionals.",
+    )
     ap.add_argument(
         "--out-dir",
         type=Path,
@@ -193,20 +204,38 @@ def main() -> None:
     manifest_path = out_dir / "manifest_pipeline4.csv"
 
     if args.trial:
-        if len(args.dng_files) != 2:
-            raise SystemExit("Single-trial mode: python3 run_pipeline4.py --trial P1_T2 noflash.dng flash.dng")
-        nf, fl = args.dng_files
+        if args.noflash is not None and args.flash is not None:
+            nf, fl = args.noflash, args.flash
+        else:
+            # First positional may land in data_root; collect both DNG paths.
+            paths: List[Path] = []
+            if args.data_root is not None:
+                paths.append(args.data_root)
+            paths.extend(args.dng_files)
+            if len(paths) != 2:
+                raise SystemExit(
+                    "Single-trial mode — use either:\n"
+                    "  python3 run_pipeline4.py --trial P1_T2 --noflash a.dng --flash b.dng\n"
+                    "  python3 run_pipeline4.py --trial P1_T2 a.dng b.dng"
+                )
+            nf, fl = paths[0], paths[1]
         for p in (nf, fl):
             if not p.is_file():
                 raise SystemExit(f"Missing DNG: {p}")
         rows = [_one_pair_row(args.trial, nf, fl, ref)]
     else:
-        data_root = args.data_root or Path(
-            __import__("os").environ.get("DATA_ROOT", "")
-        ).expanduser()
+        data_root = args.data_root
+        if data_root is None:
+            env_root = Path(__import__("os").environ.get("DATA_ROOT", "")).expanduser()
+            if env_root.is_dir():
+                data_root = env_root
+            elif BUNDLED_RAW.is_dir():
+                data_root = BUNDLED_RAW
+                print(f"Using bundled booth RAW dataset: {data_root}")
         if not data_root or not data_root.is_dir():
             raise SystemExit(
-                "Provide DATA_ROOT path:\n"
+                "Provide a RAW dataset path, or clone with data/phase4_booth_raw/ included:\n"
+                "  python3 run_pipeline4.py\n"
                 "  python3 run_pipeline4.py /path/to/RAW/Dataset\n"
                 "Or one trial:\n"
                 "  python3 run_pipeline4.py --trial P1_T2 noflash.dng flash.dng"
@@ -233,6 +262,8 @@ def main() -> None:
         "0.0017",
         "--exclude-trials",
         "P2_T1",
+        "--bag-cat02",
+        "off",
         "--production",
         "--out-dir",
         str(out_dir),

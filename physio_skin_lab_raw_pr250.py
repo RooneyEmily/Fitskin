@@ -337,7 +337,7 @@ def read_raw_linear_rgb(path: Path, *, half_size: int = 1, use_camera_wb: bool =
             rgb = raw.postprocess(
                 use_camera_wb=False,
                 use_auto_wb=False,
-                user_wb=(1.0, 1.0, 1.0, 1.0),
+                user_wb=[1.0, 1.0, 1.0, 1.0],
                 **kw,
             )
     return np.asarray(rgb, dtype=np.float64)

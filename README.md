@@ -2,30 +2,41 @@
 
 Chart-free **flash / no-flash** geometric reflectance on iPhone DNG pairs, compared to **FitSkin cheek** scanner CIELAB (D65).
 
-## Reproduce (one command)
+## Reproduce (clone → install → run)
+
+Everything needed is in this repo: code, calibration, FitSkin reference Lab, and booth RAW DNGs.
 
 ```bash
 git clone https://github.com/RooneyEmily/Fitskin.git
 cd Fitskin
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Full booth dataset (Participant */Trial */*NoFlash*.DNG + *Flash*.DNG)
-python3 run_pipeline4.py /path/to/RAW/Dataset
+# Full 5-trial cohort (bundled RAW under data/phase4_booth_raw/)
+python3 run_pipeline4.py
 
-# Or a single trial (two DNG files) — e.g. best Phase 4 trial P1_T2 (target ΔE₀₀ ≈ 2.75)
-python3 run_pipeline4.py --trial P1_T2 /path/to/NoFlash.DNG /path/to/Flash.DNG
+# Single trial smoke test (target ΔE₀₀ ≈ 2.75)
+python3 run_pipeline4.py --trial P1_T2 \
+  data/phase4_booth_raw/Participant\ 1/Trial\ 2/IMG_0787_NoFlash.DNG \
+  data/phase4_booth_raw/Participant\ 1/Trial\ 2/IMG_0786_Flash.DNG
 ```
 
-**`run_pipeline4.py`** is the only script you need. It runs the production stack (affine calibration, cheek ROI, skin-mask exposure, exposure anchor) and prints pipeline vs FitSkin Lab plus ΔE₀₀ per trial.
+**`run_pipeline4.py`** runs the production stack (affine calibration, cheek ROI, skin-mask exposure, exposure anchor) and prints pipeline vs FitSkin Lab plus ΔE₀₀ per trial.
 
 | Target | Median ΔE₀₀ |
 |--------|-------------|
 | 5-trial Phase 4 cohort (excludes P2_T1) | **≈ 3.50** |
 | Single trial P1_T2 (typical) | **≈ 2.75** |
 
-FitSkin reference values are bundled in `data/phase4_fitskin_reference.csv` (same-session scanner cheek Lab from the paper).
+FitSkin reference values: `data/phase4_fitskin_reference.csv` (same-session scanner cheek Lab from the paper).
 
-**App-exported ProRAW** (not booth RAW): add `--app-proraw` (enables embedded camera white balance).
+Booth RAW DNGs: `data/phase4_booth_raw/` (~500 MB, 12 files). You can also point at your own copy:
+
+```bash
+python3 run_pipeline4.py /path/to/RAW/Dataset
+```
+
+**App-exported ProRAW** (not booth RAW): add `--app-proraw` (enables embedded camera white balance). Do **not** use `--app-proraw` for booth RAW.
 
 Output: `pipeline4_output/flash_noflash_skin_lab.csv`
 

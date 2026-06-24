@@ -69,25 +69,39 @@ from flash_noflash_face_roi import cheek_mask_from_landmarks
 ROOT = Path(__file__).resolve().parent
 _DEFAULT_NIX_BAG_JSON = ROOT / "calibration" / "sephora_bag_nix_reference.json"
 FLASH_REPO = ROOT.parent / "mabl-flash-illumination"
-if FLASH_REPO.is_dir():
-    sys.path.insert(0, str(FLASH_REPO))
 try:
-    from src.align_pair import (  # type: ignore
+    from vendor.flash_align.align_pair import (
         AlignResult,
         align_flash_to_noflash,
         align_result_to_bgr_preview,
         estimate_exposure_scale,
     )
-    from src.color_linear import linear_rgb_to_bgr_uint8  # type: ignore
-    from src.lu2006_ambient import (  # type: ignore
+    from vendor.flash_align.color_linear import linear_rgb_to_bgr_uint8
+    from vendor.flash_align.lu2006_ambient import (
         Lu2006Result,
         estimate_ambient_lu2006,
         planck_rgb_from_cct_duv,
     )
-except ImportError as e:
-    raise SystemExit(
-        f"Need mabl-flash-illumination at {FLASH_REPO} (align_pair, lu2006_ambient). {e}"
-    ) from e
+except ImportError:
+    if FLASH_REPO.is_dir():
+        sys.path.insert(0, str(FLASH_REPO))
+    try:
+        from src.align_pair import (  # type: ignore
+            AlignResult,
+            align_flash_to_noflash,
+            align_result_to_bgr_preview,
+            estimate_exposure_scale,
+        )
+        from src.color_linear import linear_rgb_to_bgr_uint8  # type: ignore
+        from src.lu2006_ambient import (  # type: ignore
+            Lu2006Result,
+            estimate_ambient_lu2006,
+            planck_rgb_from_cct_duv,
+        )
+    except ImportError as e:
+        raise SystemExit(
+            f"Need vendor.flash_align or mabl-flash-illumination at {FLASH_REPO}. {e}"
+        ) from e
 
 # sRGB (D65) linear RGB → XYZ, same matrix as IEC chart scripts
 _SRGB_D65_XYZ = np.array(
