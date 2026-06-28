@@ -80,6 +80,57 @@ def chart_detect_and_wb(bgr: np.ndarray) -> Tuple[Optional[np.ndarray], Optional
     )
 
 
+def chart_area_fraction_from_quads(quads: np.ndarray, height: int, width: int) -> float:
+    """BBox area of all patch quads divided by frame area (same spirit as JPEG chart_area_fraction)."""
+    xs = quads[:, :, 0].ravel()
+    ys = quads[:, :, 1].ravel()
+    area = float((xs.max() - xs.min()) * (ys.max() - ys.min()))
+    return area / max(float(height * width), 1.0)
+
+
+def fit_cc_matrix_linear(
+    patch_rgb_lin: np.ndarray,
+    *,
+    huber: bool = False,
+    upweight_skin_neutral: bool = True,
+    affine: bool = False,
+) -> Tuple[np.ndarray, float, np.ndarray]:
+    """Camera-linear RGB patches → canonical D65 XYZ (for iPhone DNG / rawpy)."""
+    ref_xyz = load_canonical_xyz_d65()
+    lin = np.asarray(patch_rgb_lin, dtype=np.float64)
+    row_w = None
+    if upweight_skin_neutral:
+        row_w = pr250.build_patch_lstsq_row_weights(anchor_weight=2.5, skin_weight=1.0)
+    if huber:
+        M, _, _ = pr250.fit_rgb_to_xyz_lstsq_huber_irls(
+            lin, ref_xyz, with_intercept=affine, row_weights=row_w
+        )
+    else:
+        M = pr250.fit_rgb_to_xyz_lstsq(
+            lin, ref_xyz, with_intercept=affine, row_weights=row_w
+        )
+    de = pr250.per_patch_delta_e_ab(lin, ref_xyz, M, affine)
+    if affine:
+        aug = np.column_stack([lin, np.ones((lin.shape[0], 1), dtype=np.float64)])
+        pred = aug @ M
+    else:
+        pred = lin @ M
+    return M, float(np.mean(de)), pred
+
+
+def apply_cc_to_linear_rgb(rgb_lin: np.ndarray, M: np.ndarray) -> np.ndarray:
+    """Camera-linear RGB (H,W,3) → D65 XYZ via chart matrix + canonical Bradford normalize."""
+    if M.shape[0] == 4:
+        h, w, _ = rgb_lin.shape
+        flat = np.column_stack([rgb_lin.reshape(-1, 3), np.ones((h * w, 1), dtype=np.float64)])
+        xyz = (flat @ M).reshape(h, w, 3)
+    else:
+        xyz = rgb_lin @ M
+    y_white = max(float(CANONICAL_WHITE_XYZ_D65[1]), 1e-12)
+    ws = CANONICAL_WHITE_XYZ_D65 / y_white
+    return pr250.apply_bradford_cat_hwc(xyz / y_white, ws, D65_XYZN)
+
+
 def fit_cc_matrix(
     patch_rgb_255: np.ndarray,
     *,
@@ -174,6 +225,185 @@ def naive_wb_lab(
         min_chroma_ab=min_chroma,
     )
     return {"L": L, "a": a, "b": b, "C": float(np.hypot(a, b)) if npx else float("nan"), "n_pixels": int(npx)}
+
+
+def process_one_dng(
+    path: Path,
+    face_mesh: Any,
+    *,
+    l_trim: float = 0.05,
+    min_chroma: float = 2.0,
+    roi: str = "mesh",
+    huber: bool = False,
+    affine: bool = False,
+    raw_half_size: int = 1,
+    raw_chart_gray_wb: bool = True,
+    chart_gray_wb_from: str = "white",
+    skin_tone: Optional[str] = None,
+    write_overlay: Optional[Path] = None,
+    write_lab_histogram: Optional[Path] = None,
+    write_ab_histogram_stem: Optional[Path] = None,
+    histogram_frame_label: str = "",
+) -> Dict[str, Any]:
+    """
+    Pansor-style DNG: rawpy linear camera RGB → MCC detect on preview → gray WB → 3×3 → cheek Lab.
+
+    Uses canonical MCC D65 reference (not PR-250 spectrometer). Prefer this over ``process_one_image``
+    on a JPEG preview when the source is iPhone RAW.
+    """
+    path = Path(path)
+    try:
+        rgb_lin = pr250.read_raw_linear_rgb(
+            path, half_size=raw_half_size, use_camera_wb=False
+        )
+    except Exception:
+        return {"chart_ok": False, "status": "raw_read_fail"}
+
+    preview_bgr = pr250.linear_rgb_to_preview_bgr(rgb_lin)
+    got = pr250.patch_linear_rgb_24(rgb_lin, preview_bgr)
+    if got is None:
+        return {"chart_ok": False, "status": "no_chart"}
+    patches, quads = got
+    h, w = rgb_lin.shape[:2]
+    frac = chart_area_fraction_from_quads(quads, h, w)
+
+    if raw_chart_gray_wb:
+        rgb_lin, patches = pr250.apply_diagonal_gray_wb_from_chart_patches(
+            rgb_lin, patches, wb_from=chart_gray_wb_from
+        )
+        preview_bgr = pr250.linear_rgb_to_preview_bgr(rgb_lin)
+
+    skin_tone_tier = ""
+    skin_tone_probe_L = float("nan")
+    skin_tone_reason = ""
+    effective_roi = roi
+    effective_affine = affine
+    if skin_tone is not None:
+        from skin_tone_policy import probe_skin_tone_tier, resolve_chart_cc_policy
+
+        tier_probe, skin_tone_probe_L = probe_skin_tone_tier(preview_bgr, face_mesh)
+        policy = resolve_chart_cc_policy(skin_tone, probe_L=skin_tone_probe_L)
+        effective_roi = policy.roi
+        effective_affine = policy.affine
+        skin_tone_tier = policy.tier
+        skin_tone_reason = policy.reason
+
+    M, patch_de_mean, pred_xyz = fit_cc_matrix_linear(
+        patches, huber=huber, affine=effective_affine
+    )
+    xyz_img = apply_cc_to_linear_rgb(rgb_lin, M)
+
+    rgb_u8 = cv2.cvtColor(preview_bgr, cv2.COLOR_BGR2RGB)
+    rgb_u8.flags.writeable = False
+    res = face_mesh.process(rgb_u8)
+    if not res.multi_face_landmarks:
+        return {
+            "chart_ok": True,
+            "status": "no_face",
+            "chart_area_fraction": frac,
+            "patch_de_ab_mean": patch_de_mean,
+        }
+
+    lm = res.multi_face_landmarks[0].landmark
+    mesh_mask, oval, kept, excl, mesh_xy = psl.build_skin_mask_from_mesh(
+        h, w, lm, skin_triangulation="tessellation", exclusion_dilate_iod_fraction=0.12
+    )
+    cheek = cheek_mask_from_landmarks(h, w, lm, mesh_mask)
+
+    ref_lab = load_canonical_lab_d65()
+    patch_lab_fit = np.array(
+        [pr250.xyz_to_lab(pred_xyz[i], pred_xyz[WHITE_PATCH_INDEX]) for i in range(24)]
+    )
+
+    rois: Dict[str, np.ndarray] = {"mesh": mesh_mask}
+    if effective_roi in ("cheek", "both"):
+        rois["cheek"] = cheek
+
+    labs: Dict[str, Dict[str, float]] = {}
+    for name, m in rois.items():
+        labs[name] = mean_skin_lab_xyz(xyz_img, m, l_trim=l_trim, min_chroma=min_chroma)
+
+    primary = labs["cheek"] if effective_roi in ("cheek", "both") else labs["mesh"]
+
+    if write_overlay is not None:
+        write_overlay.parent.mkdir(parents=True, exist_ok=True)
+        psl.write_skin_sampling_overlay_png(
+            write_overlay,
+            preview_bgr,
+            oval,
+            kept,
+            mesh_mask,
+            excl,
+            mesh_xy=mesh_xy,
+            max_width=1600,
+        )
+
+    hist_mask = cheek if effective_roi in ("cheek", "both") else mesh_mask
+    pix = None
+    if hist_mask is not None and (write_lab_histogram is not None or write_ab_histogram_stem is not None):
+        pix = skin_lab_pixels_for_mask(xyz_img, hist_mask, l_trim=l_trim, min_chroma=min_chroma)
+    if pix is not None and write_lab_histogram is not None:
+        stem = write_lab_histogram.stem.replace("_skin_lab_hists", "")
+        label = f"{histogram_frame_label} — {stem}" if histogram_frame_label else stem
+        write_skin_lab_histogram_panel(
+            write_lab_histogram,
+            pix["L"],
+            pix["a"],
+            pix["b"],
+            pix["sel"],
+            lo_thr=pix["lo_thr"],
+            hi_thr=pix["hi_thr"],
+            min_chroma_ab=min_chroma,
+            l_trim_relaxed=pix["l_trim_relaxed"],
+            chroma_relaxed=pix["chroma_relaxed"],
+            title=label,
+        )
+    if pix is not None and write_ab_histogram_stem is not None:
+        stem = write_ab_histogram_stem.name
+        label = f"{histogram_frame_label} — {stem}" if histogram_frame_label else stem
+        write_skin_ab_marginal_histograms(
+            write_ab_histogram_stem,
+            pix["L"],
+            pix["a"],
+            pix["b"],
+            pix["sel"],
+            lo_thr=pix["lo_thr"],
+            hi_thr=pix["hi_thr"],
+            min_chroma_ab=min_chroma,
+            l_trim_relaxed=pix["l_trim_relaxed"],
+            chroma_relaxed=pix["chroma_relaxed"],
+            title=f"a* / b* binning — {label}",
+        )
+
+    return {
+        "chart_ok": True,
+        "status": "ok",
+        "chart_area_fraction": frac,
+        "patch_de_ab_mean": patch_de_mean,
+        "patch_de_ab_skin01": float(
+            (
+                pr250.delta_e_ab(patch_lab_fit[0], ref_lab[0])
+                + pr250.delta_e_ab(patch_lab_fit[1], ref_lab[1])
+            )
+            / 2.0
+        ),
+        "pipeline_L": primary["L"],
+        "pipeline_a": primary["a"],
+        "pipeline_b": primary["b"],
+        "pipeline_C": primary["C"],
+        "pipeline_n_pixels": primary["n_pixels"],
+        "mesh_L": labs["mesh"]["L"],
+        "mesh_a": labs["mesh"]["a"],
+        "mesh_b": labs["mesh"]["b"],
+        "cheek_L": labs.get("cheek", labs["mesh"])["L"],
+        "cheek_a": labs.get("cheek", labs["mesh"])["a"],
+        "cheek_b": labs.get("cheek", labs["mesh"])["b"],
+        "skin_tone_tier": skin_tone_tier or None,
+        "skin_tone_probe_L": skin_tone_probe_L if np.isfinite(skin_tone_probe_L) else None,
+        "skin_tone_reason": skin_tone_reason or None,
+        "effective_roi": effective_roi,
+        "effective_affine": effective_affine,
+    }
 
 
 def process_one_image(

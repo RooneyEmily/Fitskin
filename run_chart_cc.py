@@ -12,7 +12,17 @@ Usage::
 Writes comparison CSV, summary, scatter plot, and **skin mask overlays** (mesh + cheek
 segmentation tinted on the image) under ``chart_cc_output/``.
 
-Bundled data: ``data/chart_cc_jpeg/`` + ``data/manifest_chart_cc_fitskin.csv``.
+Bundled JPEG cohort: ``data/chart_cc_jpeg/`` + ``data/manifest_chart_cc_fitskin.csv``.
+
+Pansor iPhone DNG (ColorChecker in scene, not in git)::
+
+    export PANSOR_DATA_ROOT="/path/to/Pansor Images"
+    python3 scripts/build_pansor_manifest.py --data-root "$PANSOR_DATA_ROOT"
+    python3 run_chart_cc.py \\
+        --input-mode dng \\
+        --manifest data/pansor/manifest_pansor_fitskin.csv \\
+        --cc-only \\
+        --out-dir chart_cc_output/pansor_dng
 """
 
 from __future__ import annotations
@@ -35,7 +45,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from chart_cc_fitskin_lib import process_one_image, silence_stderr  # noqa: E402
+from chart_cc_fitskin_lib import process_one_dng, process_one_image, silence_stderr  # noqa: E402
 from delta_e_2000 import delta_e_2000  # noqa: E402
 
 DEFAULT_MANIFEST = ROOT / "data" / "manifest_chart_cc_fitskin.csv"
@@ -43,6 +53,9 @@ DEFAULT_OUT = ROOT / "chart_cc_output"
 
 
 def _subject_key(row: dict) -> str:
+    sid = str(row.get("subject_id", "")).strip()
+    if sid:
+        return sid
     part = row.get("participant", "unknown")
     m = re.search(r"(\d+)", part)
     pid = m.group(1) if m else part.replace(" ", "_")
@@ -107,6 +120,17 @@ def main() -> None:
         help=f"Trial manifest (default: {DEFAULT_MANIFEST.relative_to(ROOT)})",
     )
     ap.add_argument(
+        "--input-mode",
+        choices=("jpeg", "dng"),
+        default="jpeg",
+        help="jpeg: bundled chart_cc JPEGs; dng: iPhone RAW (Pansor cohort)",
+    )
+    ap.add_argument(
+        "--cc-only",
+        action="store_true",
+        help="Pansor manifest: keep ColorChecker trials only (skip Sephora Bag).",
+    )
+    ap.add_argument(
         "--out-dir",
         type=Path,
         default=DEFAULT_OUT,
@@ -115,8 +139,21 @@ def main() -> None:
     ap.add_argument("--skin-l-trim", type=float, default=0.05)
     ap.add_argument("--skin-min-chroma", type=float, default=2.0)
     ap.add_argument("--roi", choices=("mesh", "cheek", "both"), default="cheek")
+    ap.add_argument(
+        "--skin-tone",
+        choices=("auto", "light", "dark"),
+        default=None,
+        help="Adaptive chart CC: auto=probe preview cheek L* → dark→mesh+affine, light→cheek+3×3. "
+        "Overrides --roi and --affine when set.",
+    )
     ap.add_argument("--huber", action="store_true", help="Huber IRWS fit (default: plain weighted lstsq)")
     ap.add_argument("--affine", action="store_true", help="3×4 affine RGB→XYZ fit")
+    ap.add_argument(
+        "--chart-gray-wb-from",
+        choices=("white", "neutral_column_mean"),
+        default="white",
+        help="DNG gray WB reference patch(es) before matrix fit (default: white).",
+    )
     ap.add_argument(
         "--no-overlays",
         action="store_true",
@@ -159,6 +196,10 @@ def main() -> None:
         ) as face_mesh:
             with manifest.open(newline="", encoding="utf-8") as f:
                 for row in csv.DictReader(f):
+                    if args.cc_only and row.get("condition_code", "CC") != "CC":
+                        continue
+                    if row.get("include_in_eval", "yes") == "no":
+                        continue
                     sid = _subject_key(row)
                     frames = [
                         ("noflash", _resolve_path(row["path_noflash"]), overlay_noflash, hist_noflash)
@@ -170,9 +211,8 @@ def main() -> None:
 
                     pipe: Dict[str, Any] = {"chart_ok": False}
                     for frame_kind, img_path, odir, hdir in frames:
-                        bgr = cv2.imread(str(img_path))
-                        if bgr is None:
-                            print(f"skip {sid} {frame_kind}: imread failed {img_path}", file=sys.stderr)
+                        if not img_path.is_file():
+                            print(f"skip {sid} {frame_kind}: missing {img_path}", file=sys.stderr)
                             continue
                         stem = img_path.stem
                         ovp = None if args.no_overlays else odir / f"{sid}_{stem}_skin_overlay.png"
@@ -186,19 +226,43 @@ def main() -> None:
                             if args.no_histograms
                             else hdir / f"{sid}_{stem}_{frame_kind}"
                         )
-                        frame_pipe = process_one_image(
-                            bgr,
-                            face_mesh,
-                            l_trim=args.skin_l_trim,
-                            min_chroma=args.skin_min_chroma,
-                            roi=args.roi,
-                            huber=args.huber,
-                            affine=args.affine,
-                            write_overlay=ovp,
-                            write_lab_histogram=hist,
-                            write_ab_histogram_stem=ab_stem,
-                            histogram_frame_label=frame_kind,
-                        )
+                        if args.input_mode == "dng":
+                            frame_pipe = process_one_dng(
+                                img_path,
+                                face_mesh,
+                                l_trim=args.skin_l_trim,
+                                min_chroma=args.skin_min_chroma,
+                                roi=args.roi,
+                                huber=args.huber,
+                                affine=args.affine,
+                                chart_gray_wb_from=args.chart_gray_wb_from,
+                                skin_tone=args.skin_tone,
+                                write_overlay=ovp,
+                                write_lab_histogram=hist,
+                                write_ab_histogram_stem=ab_stem,
+                                histogram_frame_label=frame_kind,
+                            )
+                        else:
+                            bgr = cv2.imread(str(img_path))
+                            if bgr is None:
+                                print(
+                                    f"skip {sid} {frame_kind}: imread failed {img_path}",
+                                    file=sys.stderr,
+                                )
+                                continue
+                            frame_pipe = process_one_image(
+                                bgr,
+                                face_mesh,
+                                l_trim=args.skin_l_trim,
+                                min_chroma=args.skin_min_chroma,
+                                roi=args.roi,
+                                huber=args.huber,
+                                affine=args.affine,
+                                write_overlay=ovp,
+                                write_lab_histogram=hist,
+                                write_ab_histogram_stem=ab_stem,
+                                histogram_frame_label=frame_kind,
+                            )
                         if frame_pipe.get("chart_ok") and frame_kind == "noflash":
                             pipe = frame_pipe
                         if frame_pipe.get("chart_ok"):
@@ -233,6 +297,10 @@ def main() -> None:
                         "patch_de_ab_mean": pipe.get("patch_de_ab_mean"),
                         "patch_de_ab_skin01": pipe.get("patch_de_ab_skin01"),
                         "chart_area_fraction": pipe.get("chart_area_fraction"),
+                        "skin_tone_tier": pipe.get("skin_tone_tier"),
+                        "skin_tone_probe_L": pipe.get("skin_tone_probe_L"),
+                        "effective_roi": pipe.get("effective_roi"),
+                        "effective_affine": pipe.get("effective_affine"),
                         "pipeline_L": pipe["pipeline_L"],
                         "pipeline_a": pipe["pipeline_a"],
                         "pipeline_b": pipe["pipeline_b"],
@@ -272,6 +340,7 @@ def main() -> None:
     da = [r["delta_a_cheek"] for r in rows_out]
     summary = {
         "n": len(rows_out),
+        "input_mode": args.input_mode,
         "reference": "mcc24_canonical_d65",
         "roi_primary": args.roi,
         "deltaE00_cheek_mean": float(np.mean(de)),

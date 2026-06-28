@@ -29,3 +29,4 @@ mobile_sam.pt
 # Local pipeline outputs
 /pipeline4_output/
 /chart_cc_output/
+/calibration/iphone17pro_trained/
