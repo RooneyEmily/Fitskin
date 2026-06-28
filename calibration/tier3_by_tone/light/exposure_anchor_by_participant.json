@@ -1,0 +1,53 @@
+{
+  "by_participant": {
+    "P1": 1.045783445372602
+  },
+  "training_trials": [
+    {
+      "subject_id": "P1_CC_T1",
+      "n_patches": 24,
+      "white_patch_scale": 0.9170975695517677
+    },
+    {
+      "subject_id": "P1_CC_T2",
+      "n_patches": 24,
+      "white_patch_scale": 1.045783445372602
+    },
+    {
+      "subject_id": "P1_CC_T3",
+      "n_patches": 24,
+      "white_patch_scale": 1.1018049022428664
+    },
+    {
+      "subject_id": "P1_T1_booth",
+      "n_patches": 24,
+      "white_patch_scale": 0.9608414187148837
+    },
+    {
+      "subject_id": "P1_T2_booth",
+      "n_patches": 24,
+      "white_patch_scale": 0.9599576135732336
+    },
+    {
+      "subject_id": "P1_T3_booth",
+      "n_patches": 24,
+      "white_patch_scale": 0.9760753749435449
+    },
+    {
+      "subject_id": "P1_JPEG_T1",
+      "n_patches": 24,
+      "white_patch_scale": 3015.627940961403
+    },
+    {
+      "subject_id": "P1_JPEG_T2",
+      "n_patches": 24,
+      "white_patch_scale": 3057.0361331295016
+    },
+    {
+      "subject_id": "P1_JPEG_T3",
+      "n_patches": 24,
+      "white_patch_scale": 3065.167238833888
+    }
+  ],
+  "notes": "Multiply chart-free reflectance linear RGB by by_participant[Px] at inference (--exposure-anchor-from-training). Same scales used to fit camera_rgb_to_xyz."
+}

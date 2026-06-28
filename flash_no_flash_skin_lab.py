@@ -119,6 +119,31 @@ _CAMERA_RGB_TO_XYZ: Optional[np.ndarray] = None
 _CAMERA_RGB_TO_XYZ_AFFINE: Optional[np.ndarray] = None  # (4, 3): [R,G,B,1] @ M → XYZ
 _IPHONE_FLASH_CCT_K: Optional[float] = None
 _IPHONE_FLASH_RGB: Optional[np.ndarray] = None
+_ACTIVE_CALIBRATION_DIR: Optional[Path] = None
+_CACHED_CAL: Any = None
+
+
+def apply_iphone_calibration_dir(cal_dir: Path) -> Any:
+    """Load bundle from *cal_dir* into module globals; return calibration object."""
+    global _CAMERA_RGB_TO_XYZ, _CAMERA_RGB_TO_XYZ_AFFINE
+    global _IPHONE_FLASH_CCT_K, _IPHONE_FLASH_RGB, _ACTIVE_CALIBRATION_DIR, _CACHED_CAL
+    from iphone_camera_calibration import load_calibration_bundle
+
+    cal_dir = cal_dir.expanduser().resolve()
+    if _ACTIVE_CALIBRATION_DIR == cal_dir and _CACHED_CAL is not None:
+        return _CACHED_CAL
+    cal = load_calibration_bundle(cal_dir)
+    _CAMERA_RGB_TO_XYZ = np.asarray(cal.camera_rgb_to_xyz, dtype=np.float64)
+    _CAMERA_RGB_TO_XYZ_AFFINE = None
+    aff_path = cal_dir / "camera_rgb_to_xyz_affine.npy"
+    if aff_path.is_file():
+        _CAMERA_RGB_TO_XYZ_AFFINE = np.load(aff_path)
+        print(f"Using affine camera_rgb_to_xyz from {aff_path}", file=sys.stderr)
+    _IPHONE_FLASH_CCT_K = float(cal.flash_cct_k)
+    _IPHONE_FLASH_RGB = np.asarray(cal.flash_rgb_linear, dtype=np.float64)
+    _ACTIVE_CALIBRATION_DIR = cal_dir
+    _CACHED_CAL = cal
+    return cal
 
 _DEFAULT_RAW_DATA_ROOT = Path(
     "/home/mabl-main/Documents/RAW Dataset-20260531T233644Z-3-001/RAW Dataset"
@@ -1174,6 +1199,21 @@ def main() -> None:
         ),
     )
     ap.add_argument(
+        "--iphone-calibration-tone-root",
+        type=Path,
+        default=None,
+        help=(
+            "Parent dir with light/ and dark/ sub-bundles (from train_skin_tone_bundles.py). "
+            "Used with --skin-tone auto|light|dark to pick matrix per trial."
+        ),
+    )
+    ap.add_argument(
+        "--skin-tone",
+        choices=("auto", "light", "dark"),
+        default="auto",
+        help="When --iphone-calibration-tone-root is set, route to light vs dark bundle.",
+    )
+    ap.add_argument(
         "--scr-awb",
         action="store_true",
         help="Zhou 2025 SCR-AWB on no-flash linear RAW + ISSA skin prior (requires --iphone-calibration).",
@@ -1182,7 +1222,7 @@ def main() -> None:
         "--skin-reflectance-prior",
         type=str,
         default=None,
-        help="Prior name or .json path for all trials (default: P1→issa_median_caucasian, P2→issa_median_african).",
+        help="Prior name or .json path for all trials (default: P1→issa_median_caucasian, P2→issa_median_south_asian).",
     )
     ap.add_argument(
         "--exposure-anchor-from-training",
@@ -1282,18 +1322,13 @@ def main() -> None:
     cal = None
     scr_spectral_sensitivity: Optional[np.ndarray] = None
     scr_wavelengths_nm: Optional[np.ndarray] = None
-    if args.iphone_calibration is not None:
-        from iphone_camera_calibration import load_calibration_bundle
-
-        cal = load_calibration_bundle(args.iphone_calibration)
-        _CAMERA_RGB_TO_XYZ = np.asarray(cal.camera_rgb_to_xyz, dtype=np.float64)
-        _CAMERA_RGB_TO_XYZ_AFFINE = None
-        aff_path = Path(args.iphone_calibration) / "camera_rgb_to_xyz_affine.npy"
-        if aff_path.is_file():
-            _CAMERA_RGB_TO_XYZ_AFFINE = np.load(aff_path)
-            print(f"Using affine camera_rgb_to_xyz from {aff_path}", file=sys.stderr)
-        _IPHONE_FLASH_CCT_K = float(cal.flash_cct_k)
-        _IPHONE_FLASH_RGB = np.asarray(cal.flash_rgb_linear, dtype=np.float64)
+    tone_root: Optional[Path] = None
+    if args.iphone_calibration_tone_root is not None:
+        tone_root = args.iphone_calibration_tone_root.expanduser().resolve()
+        if not tone_root.is_dir():
+            raise SystemExit(f"--iphone-calibration-tone-root not found: {tone_root}")
+    if args.iphone_calibration is not None and tone_root is None:
+        cal = apply_iphone_calibration_dir(args.iphone_calibration)
         measured_flash_cct_k = _IPHONE_FLASH_CCT_K
         flash_rgb_measured = _IPHONE_FLASH_RGB
         scr_spectral_sensitivity = np.asarray(cal.spectral_sensitivity_rgb, dtype=np.float64)
@@ -1301,6 +1336,21 @@ def main() -> None:
         print(
             f"iPhone calibration: {cal.device_label}  flash CCT≈{cal.flash_cct_k:.0f} K  "
             f"(MK350 SPD)",
+            file=sys.stderr,
+        )
+    elif tone_root is not None and args.skin_tone in ("light", "dark"):
+        from skin_tone_policy import resolve_calibration_dir
+
+        cal_dir = resolve_calibration_dir(tone_root, args.skin_tone)
+        cal = apply_iphone_calibration_dir(cal_dir)
+        measured_flash_cct_k = _IPHONE_FLASH_CCT_K
+        flash_rgb_measured = _IPHONE_FLASH_RGB
+        scr_spectral_sensitivity = np.asarray(cal.spectral_sensitivity_rgb, dtype=np.float64)
+        scr_wavelengths_nm = np.asarray(cal.wavelengths_nm, dtype=np.float64)
+        args.iphone_calibration = cal_dir
+        print(
+            f"iPhone calibration (fixed {args.skin_tone}): {cal_dir}  "
+            f"flash CCT≈{cal.flash_cct_k:.0f} K",
             file=sys.stderr,
         )
 
@@ -1320,7 +1370,7 @@ def main() -> None:
     bag_sam_segmenter = None
     bag_cat02_mode = str(args.bag_cat02)
     if bag_cat02_mode != "off":
-        if args.iphone_calibration is None:
+        if args.iphone_calibration is None and tone_root is None:
             if bag_cat02_mode == "on":
                 raise SystemExit("--bag-cat02 on requires --iphone-calibration")
             print(
@@ -1355,17 +1405,18 @@ def main() -> None:
         from bag_chromatic_correction import is_sephora_bag_trial_row
 
     if args.exposure_anchor_from_training:
-        if args.iphone_calibration is None:
+        if args.iphone_calibration is None and tone_root is None:
             raise SystemExit(
                 "--exposure-anchor-from-training requires --iphone-calibration "
                 "(trained bundle with training_trials[].white_patch_scale)."
             )
         from exposure_anchor import load_exposure_anchors
 
-        exposure_anchors = load_exposure_anchors(args.iphone_calibration)
-        print(f"Reflectance exposure anchors: {exposure_anchors}", file=sys.stderr)
+        if tone_root is None:
+            exposure_anchors = load_exposure_anchors(args.iphone_calibration)
+            print(f"Reflectance exposure anchors: {exposure_anchors}", file=sys.stderr)
 
-    if args.scr_awb and cal is None:
+    if args.scr_awb and cal is None and tone_root is None:
         raise SystemExit("--scr-awb requires --iphone-calibration (monochromator S_j(lambda)).")
     if args.scr_awb:
         print(
@@ -1520,9 +1571,33 @@ def main() -> None:
                         from exposure_anchor import participant_key
 
                         pk = participant_key(sid, str(row.get("participant", "")))
+                        skin_tone_tier = ""
+                        skin_tone_reason = ""
+                        row_lu = lu_sharpening
+                        row_measured_flash_cct_k = measured_flash_cct_k
+                        row_flash_rgb_measured = flash_rgb_measured
+                        row_exposure_anchors = exposure_anchors
+                        if tone_root is not None:
+                            from skin_tone_policy import resolve_calibration_dir, resolve_fnf_skin_tone_tier
+
+                            skin_tone_tier, skin_tone_reason = resolve_fnf_skin_tone_tier(
+                                args.skin_tone, row
+                            )
+                            cal_dir = resolve_calibration_dir(tone_root, skin_tone_tier)
+                            apply_iphone_calibration_dir(cal_dir)
+                            row_measured_flash_cct_k = _IPHONE_FLASH_CCT_K
+                            row_flash_rgb_measured = _IPHONE_FLASH_RGB
+                            auto_m = cal_dir / "lu_sharpening_M.npy"
+                            row_lu = load_lu_sharpening_matrix(
+                                auto_m if auto_m.is_file() else lu_sharpen_path
+                            )
+                            if args.exposure_anchor_from_training:
+                                from exposure_anchor import load_exposure_anchors
+
+                                row_exposure_anchors = load_exposure_anchors(cal_dir)
                         reflectance_scale: Optional[float] = None
-                        if exposure_anchors is not None:
-                            reflectance_scale = exposure_anchors.get(pk)
+                        if row_exposure_anchors is not None:
+                            reflectance_scale = row_exposure_anchors.get(pk)
                             if reflectance_scale is None:
                                 print(
                                     f"Warning: no exposure anchor for {pk}; reflectance unscaled",
@@ -1580,11 +1655,11 @@ def main() -> None:
                                     skin_min_chroma_ab=args.skin_min_chroma_ab,
                                     input_mode="dng",
                                     flash_cct_k=flash_cct_k,
-                                    lu_sharpening_matrix=lu_sharpening,
+                                    lu_sharpening_matrix=row_lu,
                                     known_ambient_cct_k=known_ambient_cct_k,
                                     known_ambient_duv=float(args.known_ambient_duv),
-                                    measured_flash_cct_k=measured_flash_cct_k,
-                                    flash_rgb_measured=flash_rgb_measured,
+                                    measured_flash_cct_k=row_measured_flash_cct_k,
+                                    flash_rgb_measured=row_flash_rgb_measured,
                                     scr_awb_prior_name=scr_prior_name,
                                     scr_awb_spectral_sensitivity=scr_spectral_sensitivity,
                                     scr_awb_wavelengths_nm=scr_wavelengths_nm,
@@ -1625,11 +1700,11 @@ def main() -> None:
                                     skin_min_chroma_ab=args.skin_min_chroma_ab,
                                     input_mode="jpeg",
                                     flash_cct_k=flash_cct_k,
-                                    lu_sharpening_matrix=lu_sharpening,
+                                    lu_sharpening_matrix=row_lu,
                                     known_ambient_cct_k=known_ambient_cct_k,
                                     known_ambient_duv=float(args.known_ambient_duv),
-                                    measured_flash_cct_k=measured_flash_cct_k,
-                                    flash_rgb_measured=flash_rgb_measured,
+                                    measured_flash_cct_k=row_measured_flash_cct_k,
+                                    flash_rgb_measured=row_flash_rgb_measured,
                                     scr_awb_prior_name=scr_prior_name if args.scr_awb else None,
                                     scr_awb_spectral_sensitivity=scr_spectral_sensitivity,
                                     scr_awb_wavelengths_nm=scr_wavelengths_nm,
@@ -1669,6 +1744,9 @@ def main() -> None:
                             "fitskin_cheek_a": _float_field(row, "fitskin_cheek_a"),
                             "fitskin_cheek_b": _float_field(row, "fitskin_cheek_b"),
                         }
+                        if skin_tone_tier:
+                            rec["skin_tone_tier"] = skin_tone_tier
+                            rec["skin_tone_reason"] = skin_tone_reason
                         rec.update({k: v for k, v in stats.items() if not k.startswith("_")})
 
                         if pass_idx == 0 and args.fitskin_lightness_calibration:
@@ -1870,7 +1948,7 @@ def main() -> None:
     if args.scr_awb:
         summary["scr_awb"] = (
             "Zhou et al. 2025 SCR-AWB: M @ alpha = median skin RGB; "
-            "ISSA cheek priors (P1 caucasian, P2 african by default)"
+            "ISSA cheek priors (P1 caucasian, P2 south_asian / Indian by default)"
         )
         summary["skin_reflectance_prior_override"] = args.skin_reflectance_prior
     for method in summary_methods:

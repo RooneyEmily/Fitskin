@@ -64,9 +64,10 @@ if _planck_rgb_linear is None:
 
 
 # Default portrait priors for Phase 3 cohort (ISSA cheek medians, 400–700 nm).
+# P2 = Liki (Indian) → South Asian ISSA median, not African.
 DEFAULT_PARTICIPANT_PRIOR: dict[str, str] = {
     "P1": "issa_median_caucasian",
-    "P2": "issa_median_african",
+    "P2": "issa_median_south_asian",
 }
 
 # Three-term illuminant basis (K) — Zhou uses SVD daylight bank; Planck triple is a stable v1.

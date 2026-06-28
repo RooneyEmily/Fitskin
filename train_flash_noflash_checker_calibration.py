@@ -23,6 +23,7 @@ Example::
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sys
@@ -50,7 +51,12 @@ _RAW_EXTS = {".dng", ".DNG", ".cr2", ".CR2", ".jpg", ".jpeg", ".JPG", ".JPEG"}
 
 def _discover_pairs(data_root: Path) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
-    for part_dir in sorted(data_root.glob("Participant*")):
+    data_root = data_root.expanduser().resolve()
+    if data_root.name.lower().startswith("participant"):
+        part_dirs = [data_root]
+    else:
+        part_dirs = sorted(p for p in data_root.glob("Participant*") if p.is_dir())
+    for part_dir in part_dirs:
         for trial_dir in sorted(part_dir.glob("Trial*")):
             nf = fl = None
             for p in trial_dir.iterdir():
@@ -71,9 +77,51 @@ def _discover_pairs(data_root: Path) -> List[Dict[str, str]]:
                         "subject_id": f"P{pnum}_T{tnum}",
                         "path_noflash": str(nf),
                         "path_flash": str(fl),
+                        "raw_camera_wb": "",
                     }
                 )
     return rows
+
+
+def _load_pairs_from_manifest(
+    manifest: Path,
+    *,
+    person: str = "",
+    subject_prefix: str = "",
+    cc_only: bool = True,
+) -> List[Dict[str, str]]:
+    """Load flash/no-flash pairs from a Fitskin/Pansor-style CSV."""
+    out: List[Dict[str, str]] = []
+    with manifest.expanduser().open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if str(row.get("include_in_eval", "yes")).strip().lower() not in ("yes", "1", "true"):
+                continue
+            if cc_only and row.get("condition_code", "CC") != "CC":
+                continue
+            if person and row.get("person", "") != person and row.get("participant", "") != person:
+                continue
+            sid = str(row.get("subject_id", ""))
+            if subject_prefix and not sid.startswith(subject_prefix):
+                continue
+            nf = str(row.get("path_noflash", "")).strip()
+            fl = str(row.get("path_flash", "")).strip()
+            if not nf or not fl:
+                continue
+            out.append(
+                {
+                    "subject_id": sid or "unknown",
+                    "path_noflash": nf,
+                    "path_flash": fl,
+                    "raw_camera_wb": str(row.get("raw_camera_wb", "")).strip(),
+                }
+            )
+    return out
+
+
+def _parse_bool_field(val: object, default: bool) -> bool:
+    if val is None or str(val).strip() == "":
+        return default
+    return str(val).strip().lower() in ("yes", "1", "true", "on")
 
 
 def _read_linear_rgb(path: Path, *, half_size: int, camera_wb: bool) -> np.ndarray:
@@ -136,7 +184,31 @@ def _log_chroma_rows(rgb: np.ndarray) -> np.ndarray:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--data-root", type=Path, required=True)
+    ap.add_argument("--data-root", type=Path, default=None)
+    ap.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="CSV with path_noflash/path_flash (Pansor manifest). Used instead of or with --data-root.",
+    )
+    ap.add_argument("--person", type=str, default="", help="Manifest filter: person column (e.g. Liki, Emily).")
+    ap.add_argument(
+        "--subject-prefix",
+        type=str,
+        default="",
+        help="Manifest filter: subject_id prefix (e.g. P2_CC).",
+    )
+    ap.add_argument(
+        "--cc-only",
+        action="store_true",
+        default=True,
+        help="Manifest: ColorChecker trials only (default on).",
+    )
+    ap.add_argument(
+        "--include-bag-trials",
+        action="store_true",
+        help="Manifest: also include Sephora Bag trials (no MCC — usually skip).",
+    )
     ap.add_argument("--out-dir", type=Path, default=ROOT / "calibration" / "iphone17pro_trained")
     ap.add_argument(
         "--monochromator-bundle",
@@ -195,10 +267,32 @@ def main() -> None:
         help="Row weight for each ISSA synthetic skin row.",
     )
     args = ap.parse_args()
+    cc_only = not args.include_bag_trials
 
-    rows = _discover_pairs(args.data_root)
+    rows: List[Dict[str, str]] = []
+    if args.manifest is not None and args.manifest.is_file():
+        rows.extend(
+            _load_pairs_from_manifest(
+                args.manifest,
+                person=args.person,
+                subject_prefix=args.subject_prefix,
+                cc_only=cc_only,
+            )
+        )
+    if args.data_root is not None and args.data_root.is_dir():
+        rows.extend(_discover_pairs(args.data_root))
     if not rows:
-        raise SystemExit(f"No Flash/NoFlash pairs under {args.data_root}")
+        raise SystemExit("No training pairs: provide --manifest and/or --data-root")
+
+    seen: set[tuple[str, str]] = set()
+    deduped: List[Dict[str, str]] = []
+    for row in rows:
+        key = (row["path_noflash"], row["path_flash"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    rows = deduped
 
     from flash_no_flash_skin_lab import (
         _resize_linear_max_width,
@@ -215,11 +309,12 @@ def main() -> None:
     for row in rows:
         nf_path = Path(row["path_noflash"])
         fl_path = Path(row["path_flash"])
+        camera_wb = _parse_bool_field(row.get("raw_camera_wb"), args.raw_camera_wb)
         nf_lin = _read_linear_rgb(
-            nf_path, half_size=args.raw_half_size, camera_wb=args.raw_camera_wb
+            nf_path, half_size=args.raw_half_size, camera_wb=camera_wb
         )
         fl_lin = _read_linear_rgb(
-            fl_path, half_size=args.raw_half_size, camera_wb=args.raw_camera_wb
+            fl_path, half_size=args.raw_half_size, camera_wb=camera_wb
         )
         nf_work = _resize_linear_max_width(nf_lin, args.max_align_width)
         fl_work = _resize_linear_max_width(fl_lin, args.max_align_width)
@@ -334,7 +429,8 @@ def main() -> None:
     np.save(args.out_dir / "lu_sharpening_M.npy", M_lu)
 
     bundle: Dict[str, Any] = {
-        "source_root": str(args.data_root),
+        "source_root": str(args.data_root or args.manifest or ""),
+        "skin_tone_tier": args.out_dir.name if args.out_dir.name in ("light", "dark") else None,
         "device_label": "iPhone trained (MCC24 no-flash + optional monochromator flash)",
         "lab3_method": f"train: {matrix_method} on aligned no-flash; infer: chart-free",
         "matrix_fit": matrix_method,
