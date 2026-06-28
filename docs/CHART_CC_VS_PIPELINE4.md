@@ -8,6 +8,7 @@
 |--------|------|------------------------|
 | Chart CC (`run_chart_cc.py`) | JPEG + ColorChecker in scene | **~4.9** |
 | Chart CC + **`--skin-tone auto`** | Pansor ProRAW DNG ($N=6$ CC trials) | **~1.4** |
+| Chart CC **`--chart-only`** (mesh + affine, no routing) | Same Pansor DNG | **~2.2** |
 | Chart CC fixed cheek ROI (no auto) | Same Pansor DNG | **~4.6** |
 | Flash/no-flash (`run_pipeline4.py`) on **same JPEGs** | Same 6 trials | **~11.5** |
 | Flash/no-flash (`run_pipeline4.py`) on **booth DNG** | Chart-free booth RAW | **~3.5** |
@@ -28,9 +29,42 @@ Ground truth: FitSkin May 20 median cheek Lab (cross-session). Six trials: P1_CC
 | P2_CC_T3 | 4.89 | **0.93** | dark | mesh + affine |
 | **Median** | **4.64** | **1.41** | | |
 
-**Skin-tone auto** probes preview cheek $L^*$ (threshold 42): lighter skin → cheek ROI + $3\times3$; darker skin → face-mesh ROI + $3\times4$ affine. This fixes Likitha's $L^*$ overshoot (cheek hull read ~57 vs FitSkin ~52).
+**Skin-tone auto** probes preview cheek $L^*$ (threshold 42): lighter skin → cheek ROI + $3\times3$; darker skin → face-mesh ROI + $3\times4$ affine.
 
-### Reproduce (Pansor DNG)
+### Chart-only (zero prior)
+
+Use when you want **only** the ColorChecker in the frame—no tone routing, ISSA, offline matrices, or demographics:
+
+```bash
+python3 run_chart_cc.py \
+  --input-mode dng \
+  --manifest data/pansor/manifest_pansor_fitskin.csv \
+  --cc-only \
+  --chart-only \
+  --out-dir chart_cc_output/pansor_dng_chart_only
+```
+
+This always uses **face-mesh ROI + affine $3\times4$** fit from the 24 MCC patches (same recipe for every person).
+
+| Trial | Cheek + 3×3 ΔE₀₀ | **`--chart-only`** ΔE₀₀ |
+|-------|------------------|---------------------------|
+| P1_CC_T1 | 5.04 | 7.53 |
+| P1_CC_T2 | 2.25 | 3.84 |
+| P1_CC_T3 | 1.09 | 2.73 |
+| P2_CC_T1 | 4.39 | **0.96** |
+| P2_CC_T2 | 5.95 | **1.73** |
+| P2_CC_T3 | 4.89 | **0.93** |
+| **Median** | 4.64 | **2.23** |
+
+Pipeline steps (nothing else):
+1. Detect ColorChecker on the frame  
+2. Gray white balance from chart neutrals  
+3. Fit affine RGB→XYZ from 24 patches vs canonical MCC D65  
+4. Mean $L^*a^*b^*$ on face-mesh skin mask  
+
+Output Lab **is** the skin-tone estimate under D65. Map to MST or a shade index downstream if needed—no extra priors at capture time.
+
+### Reproduce (Pansor DNG, with auto routing)
 
 ```bash
 # 1. Build manifest (paths are local; not committed)
@@ -78,12 +112,14 @@ Chart patch fit quality: mean patch ΔE_ab ≈ 9–10 on the 24 patches (canonic
 ## Flags
 
 ```bash
-python3 run_chart_cc.py              # default: bundled JPEG, plain lstsq, overlays on
+python3 run_chart_cc.py              # default: bundled JPEG, cheek ROI, plain lstsq
+python3 run_chart_cc.py --chart-only # zero prior: mesh + affine (DNG or JPEG)
 python3 run_chart_cc.py --input-mode dng --manifest data/pansor/manifest_pansor_fitskin.csv --cc-only
-python3 run_chart_cc.py --skin-tone auto   # recommended for mixed light/dark skin (DNG or JPEG)
-python3 run_chart_cc.py --huber        # previous Huber IRWS (~5.2 median on JPEG)
-python3 run_chart_cc.py --affine     # force 3×4 affine (auto sets this for dark tier)
+python3 run_chart_cc.py --skin-tone auto   # adaptive ROI/matrix (uses preview L* probe)
+python3 run_chart_cc.py --huber        # Huber IRWS fit on JPEG cohort
+python3 run_chart_cc.py --affine     # force 3×4 affine
+python3 run_chart_cc.py --roi mesh     # mesh ROI without affine
 python3 run_chart_cc.py --no-overlays
 ```
 
-See `skin_tone_policy.py` for tier routing logic (preview $L^* \ge 42$ → light/cheek, else dark/mesh+affine).
+`--chart-only` is mutually exclusive with `--skin-tone`. See `skin_tone_policy.py` only if you use adaptive routing.

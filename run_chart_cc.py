@@ -2,11 +2,18 @@
 """
 In-scene ColorChecker pipeline — cheek Lab vs FitSkin (no flash/no-flash math).
 
-Detects Classic 24 in each JPEG, white-balances from chart, fits 3×3 to canonical MCC D65,
+**Original implementation:** ``mabl-flash-illumination/scripts/run_fitskin_chart_cc_pipeline.py``
+(see ``docs/CHART_CC_ORIGINAL.md``).
+
+Detects Classic 24 in each frame, white-balances from chart, fits 3×3 to canonical MCC D65,
 applies to face cheek ROI, compares to FitSkin scanner Lab.
 
 Usage::
 
+    # Original-style (Huber + cheek, single no-flash frame)
+    python3 run_chart_cc.py --legacy --no-include-flash
+
+    # Bundled JPEG cohort default
     python3 run_chart_cc.py
 
 Writes comparison CSV, summary, scatter plot, and **skin mask overlays** (mesh + cheek
@@ -16,13 +23,17 @@ Bundled JPEG cohort: ``data/chart_cc_jpeg/`` + ``data/manifest_chart_cc_fitskin.
 
 Pansor iPhone DNG (ColorChecker in scene, not in git)::
 
-    export PANSOR_DATA_ROOT="/path/to/Pansor Images"
     python3 scripts/build_pansor_manifest.py --data-root "$PANSOR_DATA_ROOT"
+
+    # Zero prior: only ColorChecker + face mesh (recommended fixed recipe)
     python3 run_chart_cc.py \\
         --input-mode dng \\
         --manifest data/pansor/manifest_pansor_fitskin.csv \\
-        --cc-only \\
-        --out-dir chart_cc_output/pansor_dng
+        --cc-only --chart-only \\
+        --out-dir chart_cc_output/pansor_dng_chart_only
+
+    # Optional: adaptive ROI/matrix from preview L* (not chart-only)
+    python3 run_chart_cc.py ... --skin-tone auto
 """
 
 from __future__ import annotations
@@ -80,6 +91,13 @@ def _de00(Lp, ap, bp, Lf, af, bf) -> float:
     )
 
 
+def _optional_float(row: dict, key: str) -> float:
+    raw = row.get(key, "")
+    if raw is None or str(raw).strip() == "":
+        return float("nan")
+    return float(raw)
+
+
 def _print_summary(rows: List[Dict[str, Any]], out_dir: Path) -> None:
     de = [float(r["deltaE00_cheek"]) for r in rows if np.isfinite(r["deltaE00_cheek"])]
     if not de:
@@ -104,6 +122,7 @@ def _print_summary(rows: List[Dict[str, Any]], out_dir: Path) -> None:
     )
     print("=" * 60)
     print(f"\nOverlays:  {out_dir / 'skin_mask_overlays'}")
+    print(f"  Cheek ROI: {out_dir / 'skin_mask_overlays' / 'cheek_vs_mesh'}")
     print(f"Full CSV:  {out_dir / 'comparison.csv'}")
 
 
@@ -144,9 +163,26 @@ def main() -> None:
         choices=("auto", "light", "dark"),
         default=None,
         help="Adaptive chart CC: auto=probe preview cheek L* → dark→mesh+affine, light→cheek+3×3. "
-        "Overrides --roi and --affine when set.",
+        "Overrides --roi and --affine when set. Omit for zero-prior chart-only (use --chart-only).",
     )
-    ap.add_argument("--huber", action="store_true", help="Huber IRWS fit (default: plain weighted lstsq)")
+    ap.add_argument(
+        "--chart-only",
+        action="store_true",
+        help=(
+            "Zero-prior skin Lab: only the in-scene ColorChecker + face mesh ROI. "
+            "Sets mesh ROI + affine matrix; disables --skin-tone routing. "
+            "No ISSA, offline matrices, or participant hints."
+        ),
+    )
+    ap.add_argument(
+        "--legacy",
+        action="store_true",
+        help=(
+            "Original mabl-flash-illumination chart CC: cheek ROI, Huber patch fit, "
+            "no --skin-tone / --chart-only / --affine. See docs/CHART_CC_ORIGINAL.md."
+        ),
+    )
+    ap.add_argument("--huber", action="store_true", help="Huber IRWS fit (default: plain weighted lstsq; on with --legacy)")
     ap.add_argument("--affine", action="store_true", help="3×4 affine RGB→XYZ fit")
     ap.add_argument(
         "--chart-gray-wb-from",
@@ -172,6 +208,25 @@ def main() -> None:
         dest="include_flash",
     )
     args = ap.parse_args()
+
+    if args.chart_only:
+        if args.skin_tone is not None:
+            raise SystemExit("--chart-only cannot be combined with --skin-tone (no tone routing).")
+        if args.legacy:
+            raise SystemExit("--chart-only cannot be combined with --legacy.")
+        args.roi = "mesh"
+        args.affine = True
+        args.skin_tone = None
+
+    if args.legacy:
+        if args.skin_tone is not None:
+            raise SystemExit("--legacy cannot be combined with --skin-tone.")
+        if args.affine:
+            raise SystemExit("--legacy uses 3×3 fit only (omit --affine).")
+        args.roi = "cheek"
+        args.huber = True
+        args.skin_tone = None
+        args.affine = False
 
     manifest = args.manifest.expanduser().resolve()
     if not manifest.is_file():
@@ -283,9 +338,9 @@ def main() -> None:
                     fcL = float(row["fitskin_cheek_L"])
                     fca = float(row["fitskin_cheek_a"])
                     fcb = float(row["fitskin_cheek_b"])
-                    ffL = float(row["fitskin_forehead_L"])
-                    ffa = float(row["fitskin_forehead_a"])
-                    ffb = float(row["fitskin_forehead_b"])
+                    ffL = _optional_float(row, "fitskin_forehead_L")
+                    ffa = _optional_float(row, "fitskin_forehead_a")
+                    ffb = _optional_float(row, "fitskin_forehead_b")
 
                     rec: Dict[str, Any] = {
                         "subject_id": sid,

@@ -43,9 +43,57 @@ Output: `pipeline4_output/flash_noflash_skin_lab.csv`
 
 ---
 
+## Chart-only skin color (zero prior)
+
+**One photo + ColorChecker in frame.** No flash pair, no offline matrix, no demographics.
+
+Full documentation: **[`docs/CHART_CC_ONLY.md`](docs/CHART_CC_ONLY.md)**
+
+```bash
+# Bundled JPEG cohort (6 trials, reproducible out of the box)
+python3 run_chart_cc.py --no-include-flash
+
+# Zero-prior fixed recipe: mesh ROI + affine 3×4 (same for every person)
+python3 run_chart_cc.py --chart-only --no-include-flash
+
+# iPhone ProRAW / DNG (build manifest locally — see data/pansor/README.md)
+python3 scripts/build_pansor_manifest.py --data-root "/path/to/Pansor Images"
+python3 run_chart_cc.py --input-mode dng \
+  --manifest data/pansor/manifest_pansor_fitskin.csv \
+  --cc-only --chart-only --no-include-flash \
+  --out-dir chart_cc_output/pansor_dng_chart_only
+```
+
+| Mode | Data | Median ΔE₀₀ vs FitSkin* |
+|------|------|-------------------------|
+| `--chart-only` | Pansor ProRAW DNG | **≈ 2.2** |
+| Default (cheek + 3×3) | Bundled JPEG | **≈ 4.9** |
+| `--legacy` | Original Huber + cheek | See [`docs/CHART_CC_ORIGINAL.md`](docs/CHART_CC_ORIGINAL.md) |
+
+\*FitSkin May-20 median cheek reference per participant. Cross-session captures (Pansor) report higher absolute ΔE than same-session booth.
+
+**Cheek segmentation debug:**
+
+```bash
+python3 scripts/visualize_cheek_segmentation.py
+```
+
+Outputs under `chart_cc_output/`:
+
+| Path | Content |
+|------|---------|
+| `comparison.csv` | Per-trial Lab + ΔE vs FitSkin |
+| `skin_mask_overlays/noflash/` | Full face mesh (green) |
+| `skin_mask_overlays/cheek_vs_mesh/` | **Green = cheek ROI, yellow = mesh-only** |
+| `Lab_chart_cc_vs_fitskin_cheek.png` | Scatter plot |
+
+Skip overlays: `--no-overlays`
+
+---
+
 ## Chart CC pipeline (ColorChecker in scene)
 
-Uses the **chart in the photo** for white balance + 3×3 correction (not flash/no-flash reflectance).
+Uses the **chart in the photo** for white balance + RGB→XYZ correction (not flash/no-flash reflectance).
 
 ```bash
 python3 run_chart_cc.py
@@ -56,19 +104,7 @@ Bundled JPEGs: `data/chart_cc_jpeg/` (~87 MB). Expected median **ΔE₀₀ ≈ 4
 On the **same JPEG images**, chart CC (~5) beats chart-free flash/no-flash (~11.5 ΔE₀₀).
 Pipeline 4 on **booth DNG** (no chart in frame) reaches ~3.5 — different capture, not comparable.
 
-Outputs under `chart_cc_output/`:
-
-| Path | Content |
-|------|---------|
-| `comparison.csv` | Per-trial Lab + ΔE vs FitSkin |
-| `summary.json` | Mean/median ΔE₀₀ |
-| `skin_mask_overlays/noflash/` | **Face mesh + cheek segmentation** on no-flash frames |
-| `skin_mask_overlays/flash/` | Same overlays on flash frames |
-| `skin_lab_histograms/` | L\*, a\*, b\* histogram panels |
-
-Skip overlays: `python3 run_chart_cc.py --no-overlays`
-
----
+See also [`docs/CHART_CC_VS_PIPELINE4.md`](docs/CHART_CC_VS_PIPELINE4.md) for method comparison tables.
 
 **Paper bundle (frozen tables):** [`figures/flash_noflash_phase4/`](figures/flash_noflash_phase4/)
 

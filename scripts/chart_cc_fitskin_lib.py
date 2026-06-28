@@ -67,6 +67,37 @@ def cheek_mask_from_landmarks(h: int, w: int, lm: Any, mesh_mask: np.ndarray) ->
     return cv2.bitwise_and(m, mesh_mask)
 
 
+def write_cheek_vs_mesh_overlay_png(
+    out_path: Path,
+    wb_bgr: np.ndarray,
+    mesh_mask: np.ndarray,
+    cheek_mask: np.ndarray,
+    landmarks: Any,
+    *,
+    max_width: int = 1600,
+) -> None:
+    """Debug PNG: green = cheek ROI (Lab when ``--roi cheek``), yellow = mesh-only."""
+    h, w = wb_bgr.shape[:2]
+    vis = wb_bgr.astype(np.float64)
+    mesh_only = (mesh_mask > 0) & (cheek_mask == 0)
+    cheek_only = cheek_mask > 0
+    vis[mesh_only] = vis[mesh_only] * 0.55 + np.array([0.0, 180.0, 255.0], dtype=np.float64) * 0.45
+    vis[cheek_only] = vis[cheek_only] * 0.45 + np.array([0.0, 255.0, 80.0], dtype=np.float64) * 0.55
+    vis = np.clip(vis, 0.0, 255.0).astype(np.uint8)
+
+    ids = list(set(CHEEK_LANDMARKS + CHEEK_R_LANDMARKS))
+    pts = np.array([[int(landmarks[i].x * w), int(landmarks[i].y * h)] for i in ids], dtype=np.int32)
+    if pts.shape[0] >= 3:
+        cv2.polylines(vis, [cv2.convexHull(pts)], True, (255, 255, 255), 2)
+
+    if max_width > 0 and w > max_width:
+        scale = max_width / float(w)
+        vis = cv2.resize(vis, (max_width, int(round(h * scale))), interpolation=cv2.INTER_AREA)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out_path), vis)
+
+
 def chart_detect_and_wb(bgr: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], float, str]:
     """Returns ``(wb_bgr, patch_rgb_255, chart_area_fraction, status)``."""
     ev = vchart.evaluate_bgr_vs_ref(bgr, load_canonical_xyz_d65(), [""] * 24)
@@ -337,6 +368,10 @@ def process_one_dng(
             mesh_xy=mesh_xy,
             max_width=1600,
         )
+        cheek_ov = write_overlay.parent.parent / "cheek_vs_mesh" / write_overlay.name.replace(
+            "_skin_overlay", "_cheek_vs_mesh"
+        )
+        write_cheek_vs_mesh_overlay_png(cheek_ov, preview_bgr, mesh_mask, cheek, lm)
 
     hist_mask = cheek if effective_roi in ("cheek", "both") else mesh_mask
     pix = None
@@ -474,6 +509,10 @@ def process_one_image(
             mesh_xy=mesh_xy,
             max_width=1600,
         )
+        cheek_ov = write_overlay.parent.parent / "cheek_vs_mesh" / write_overlay.name.replace(
+            "_skin_overlay", "_cheek_vs_mesh"
+        )
+        write_cheek_vs_mesh_overlay_png(cheek_ov, preview, mesh_mask, cheek, lm)
 
     hist_mask = cheek if roi in ("cheek", "both") else mesh_mask
     pix = None
