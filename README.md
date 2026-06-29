@@ -1,5 +1,26 @@
 # Fitskin — iPhone flash/no-flash skin color vs FitSkin scanner
 
+## Chart-only on a new machine (copy-paste)
+
+**ColorChecker in frame. No flash pair, no offline matrix, no priors.** Test images are in the repo.
+
+```bash
+git clone https://github.com/RooneyEmily/Fitskin.git && \
+  cd Fitskin && \
+  bash install_chart_cc.sh
+```
+
+One-line alternative (needs `git` + `curl`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RooneyEmily/Fitskin/main/install_chart_cc.sh | bash
+```
+
+Requires **Python 3.10–3.12** (not macOS system 3.9). First run installs deps (~250 MB) and processes 6 bundled JPEG trials.  
+Docs: [`docs/QUICKSTART_CHART_CC.md`](docs/QUICKSTART_CHART_CC.md) · [`docs/CHART_CC_ONLY.md`](docs/CHART_CC_ONLY.md)
+
+---
+
 Chart-free **flash / no-flash** geometric reflectance on iPhone DNG pairs, compared to **FitSkin cheek** scanner CIELAB (D65).
 
 ## Reproduce (clone → install → run)
@@ -47,11 +68,11 @@ Output: `pipeline4_output/flash_noflash_skin_lab.csv`
 
 **One photo + ColorChecker in frame.** No flash pair, no offline matrix, no demographics.
 
-Full documentation: **[`docs/CHART_CC_ONLY.md`](docs/CHART_CC_ONLY.md)**
+Full documentation: **[`docs/CHART_CC_ONLY.md`](docs/CHART_CC_ONLY.md)** · New machine: **[`docs/QUICKSTART_CHART_CC.md`](docs/QUICKSTART_CHART_CC.md)**
 
 ```bash
-# Bundled JPEG cohort (6 trials, reproducible out of the box)
-python3 run_chart_cc.py --no-include-flash
+# After install_chart_cc.sh (or manual pip install):
+python3 run_chart_cc.py --chart-only --no-include-flash
 
 # Zero-prior fixed recipe: mesh ROI + affine 3×4 (same for every person)
 python3 run_chart_cc.py --chart-only --no-include-flash

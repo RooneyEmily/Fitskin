@@ -2,6 +2,20 @@
 
 **One photo. ColorChecker in frame. No flash/no-flash.**
 
+## New machine (fastest)
+
+```bash
+git clone https://github.com/RooneyEmily/Fitskin.git && \
+  cd Fitskin && \
+  bash install_chart_cc.sh
+```
+
+Or one line: `curl -fsSL https://raw.githubusercontent.com/RooneyEmily/Fitskin/main/install_chart_cc.sh | bash`
+
+See **[`QUICKSTART_CHART_CC.md`](QUICKSTART_CHART_CC.md)** for macOS notes, your own images, and DNG.
+
+---
+
 This is `run_chart_cc.py` — the classical target-based pipeline (Wu et al.; Choi skin-weighted patches). It does **not** use:
 
 - Flash / no-flash pairs or √(A⊙B) reflectance  
