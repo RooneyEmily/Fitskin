@@ -1,0 +1,67 @@
+{
+  "_description": "MediaPipe 468-point face mesh landmark index sets for FitSkin skin ROI extraction. All indices reference the standard MediaPipe FaceMesh model (https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker). ROIs are computed as convex hulls over the listed indices, intersected with the tessellation skin mask. These indices are identical on all platforms (Python mediapipe, Swift Vision framework, Core ML).",
+  "_coordinate_system": "Normalised [0,1] UV coordinates. x = right, y = down. Multiply by image width/height to get pixel coordinates.",
+  "_usage": {
+    "python": "from flash_noflash_face_roi import cheek_mask_from_landmarks, forehead_mask_from_landmarks",
+    "swift": "Use VNFaceObservation.landmarks.allPoints or ARFaceAnchor.geometry to obtain 468 3D landmarks, then project to 2D image coords and index into these arrays.",
+    "convex_hull": "cv2.convexHull(pts) then cv2.fillConvexPoly — or equivalent on-device rasteriser."
+  },
+
+  "cheek_left": {
+    "_description": "Left cheek: nasolabial fold, cheekbone, zygomatic arch. Avoids shadow under nose and jaw line.",
+    "indices": [50, 101, 36, 205, 206, 207, 187, 123, 116, 117, 118, 119, 120, 121, 128, 245, 193, 194, 188, 174, 196, 197, 177, 137, 147]
+  },
+
+  "cheek_right": {
+    "_description": "Right cheek: mirror of cheek_left.",
+    "indices": [280, 330, 266, 425, 426, 427, 411, 352, 345, 346, 347, 348, 349, 350, 357, 465, 416, 415, 404, 399, 421, 419, 401, 366, 376]
+  },
+
+  "cheek_combined": {
+    "_description": "Both cheeks merged into one convex hull — use when bilateral symmetry is assumed.",
+    "indices": [50, 101, 36, 205, 206, 207, 187, 123, 116, 117, 118, 119, 120, 121, 128, 245, 193, 194, 188, 174, 196, 197, 177, 137, 147, 280, 330, 266, 425, 426, 427, 411, 352, 345, 346, 347, 348, 349, 350, 357, 465, 416, 415, 404, 399, 421, 419, 401, 366, 376]
+  },
+
+  "forehead": {
+    "_description": "Forehead region between hairline and brow ridge. Good secondary sampling site: minimal shadow, no beard stubble.",
+    "indices": [10, 151, 108, 69, 104, 68, 71, 105, 66, 54, 21, 162, 127, 337, 299, 333, 298, 301, 334, 296, 284, 251, 389, 356]
+  },
+
+  "exclusions": {
+    "_description": "Regions to exclude from skin sampling. Build individual convex hulls for each, dilate by ~12% of inter-ocular distance, union them, then subtract from the skin mask.",
+    "left_eye":      {"mediapipe_connection": "FACEMESH_LEFT_EYE"},
+    "right_eye":     {"mediapipe_connection": "FACEMESH_RIGHT_EYE"},
+    "left_eyebrow":  {"mediapipe_connection": "FACEMESH_LEFT_EYEBROW"},
+    "right_eyebrow": {"mediapipe_connection": "FACEMESH_RIGHT_EYEBROW"},
+    "left_iris":     {"mediapipe_connection": "FACEMESH_LEFT_IRIS"},
+    "right_iris":    {"mediapipe_connection": "FACEMESH_RIGHT_IRIS"},
+    "lips":          {"mediapipe_connection": "FACEMESH_LIPS"}
+  },
+
+  "face_oval": {
+    "_description": "Full face outline for bounding the skin tessellation.",
+    "mediapipe_connection": "FACEMESH_FACE_OVAL"
+  },
+
+  "iod_reference": {
+    "_description": "Inter-ocular distance (IOD) reference points. Used to set spatially-adaptive dilation radius for exclusion masks.",
+    "left_eye_centre_approx":  [133, 173, 157, 158, 159, 160, 161, 246],
+    "right_eye_centre_approx": [362, 398, 384, 385, 386, 387, 388, 466]
+  },
+
+  "ecc_alignment": {
+    "_description": "ECC (Enhanced Correlation Coefficient) warp applied to register the flash frame onto the no-flash frame before reflectance computation. Euclidean (rotation + translation) warp, 500 iterations, convergence 1e-6. Source: Evangelidis & Psarakis, IEEE TPAMI 2008.",
+    "warp_type": "MOTION_EUCLIDEAN",
+    "max_iterations": 500,
+    "convergence_eps": 1e-6,
+    "gaussian_blur_radius": 5,
+    "input": "grayscale luminance [0,1] of linear camera RGB"
+  },
+
+  "reflectance": {
+    "_description": "Geometric-mean reflectance proxy. A = no-flash linear RGB, B = flash linear RGB (exposure-matched over skin). R = sqrt(A * B) element-wise, then scaled by per-participant exposure anchor s_exp.",
+    "formula": "R = s_exp * sqrt(max(A * B, 1e-8))",
+    "colour_matrix": "4x3 affine CCM: [R,G,B,1] @ M = [X,Y,Z]. M from calibration/tier3_affine/camera_rgb_to_xyz_affine.npy",
+    "reference_white_d65": [0.95047, 1.0, 1.08883]
+  }
+}

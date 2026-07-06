@@ -1,5 +1,5 @@
 {
-  "source_root": "${RAW_DATA_ROOT}",
+  "source_root": "/home/mabl-main/Documents/RAW Dataset-20260531T233644Z-3-001/RAW Dataset",
   "device_label": "iPhone trained (MCC24 no-flash + optional monochromator flash)",
   "lab3_method": "train: affine lstsq [R,G,B,1]\u2192XYZ (stacked; use camera_rgb_to_xyz_affine.npy) on aligned no-flash; infer: chart-free",
   "matrix_fit": "affine lstsq [R,G,B,1]\u2192XYZ (stacked; use camera_rgb_to_xyz_affine.npy)",
@@ -1147,5 +1147,5 @@
     6.74929275e-05,
     6.15166485e-05
   ],
-  "monochromator_bundle_merged": "calibration/iphone17pro_camera_color"
+  "monochromator_bundle_merged": "/home/mabl-main/color_space_research/new/emonet_feature_extraction/calibration/iphone17pro_camera_color"
 }
