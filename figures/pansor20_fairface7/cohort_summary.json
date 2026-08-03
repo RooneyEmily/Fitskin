@@ -1,0 +1,47 @@
+{
+  "n_trials": 65,
+  "half_size": true,
+  "hybrid": false,
+  "roi": "apple",
+  "scr_awb": false,
+  "scr_mode": "preawb_cat",
+  "l_sampling": "fairface7",
+  "fixed_cat_k": 5500.0,
+  "color_projector": null,
+  "lab_corrector": null,
+  "cal_dir": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine",
+  "mean_de00": 3.6288731060849786,
+  "median_de00": 3.44441197025351,
+  "scr_cct_mean_k": null,
+  "scr_cct_median_k": null,
+  "by_ethnicity": {
+    "Asian": {
+      "n": 13,
+      "mean_de00": 2.935534268564789,
+      "median_de00": 2.650225990802394
+    },
+    "Black": {
+      "n": 14,
+      "mean_de00": 3.340150564720919,
+      "median_de00": 3.4520232716474357
+    },
+    "Indian": {
+      "n": 18,
+      "mean_de00": 4.122006651087175,
+      "median_de00": 3.2319497043354044
+    },
+    "Iranian": {
+      "n": 6,
+      "mean_de00": 3.4687872668076682,
+      "median_de00": 3.6310656946063364
+    },
+    "White": {
+      "n": 14,
+      "mean_de00": 3.995989655548094,
+      "median_de00": 3.844382428706364
+    }
+  },
+  "affine_apple_reference_mean_de00": 5.93,
+  "preawb_5500_reference_mean_de00": 5.55,
+  "decision_rule": "accept helper only if mean_de00 < 5.93 without FitSkin training"
+}
