@@ -1,0 +1,419 @@
+% Overleaf-ready methodology: D65-FairFace7-ROI chart-free skin colorimetry
+% Upload to Overleaf (pdfLaTeX). Optional: merge bibliography with project .bib.
+%
+% Pinned numbers: results/pansor20_fairface7/summary.json
+% Emily-format table: results/pansor20_fairface7/table_emily_format.tsv
+% Code: scripts/evaluate_pansor20_chartfree_d65.py, models/fairface_race.py
+%
+% Compile: pdflatex d65_fairface7_roi_overleaf.tex
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+
+\sisetup{
+  round-mode=places,
+  round-precision=2,
+  detect-weight=true,
+  detect-family=true,
+}
+
+\newcommand{\deee}{\ensuremath{\Delta E_{00}}}
+\newcommand{\Maff}{\mathbf{M}_{\mathrm{aff}}}
+\newcommand{\Rvec}{\mathbf{R}}
+\newcommand{\pipename}{\texttt{D65-FairFace7-ROI}}
+
+\title{\pipename{}:\\
+  Chart-Free Flash/No-Flash Skin Colorimetry with FairFace-Routed Cheek Sampling}
+\author{%
+  FitSkin / Pansor chart-free D65 evaluation
+}
+\date{August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We describe a chart-free iPhone ProRAW flash/no-flash pipeline for cheek CIELAB under D65, evaluated against FitSkin Inside Lab on the Pansor-20 indoor cohort ($N=65$ trials, 20~participants).
+The \textbf{winning deployment stack}, named \pipename{}, combines (i)~a \emph{frozen} colorimetric path---pre-AWB geometric-mean reflectance, a pooled $3{\times}4$ camera RGB$\to$XYZ affine, and Bradford chromatic adaptation from a fixed 5500\,K Planckian white to D65---with (ii)~a \emph{heuristic} cheek ROI policy whose ethnicity branch is supplied at runtime by FairFace-7 on a landmark face crop (no demographics labels).
+Mean CIEDE2000 is $\deee=\num{3.63}$ (median $\num{3.44}$), improving on the frozen trimmed-mean baseline ($\deee=\num{5.55}$) and a production camera-WB affine gate ($\deee\approx\num{5.93}$), while remaining above an oracle that uses true demographics ethnicity for ROI routing ($\deee=\num{3.23}$).
+We document rejected alternatives (tone-specific dark matrices, FitSkin-trained Lab correctors, SCR-AWB as the primary illuminant, and blanket remapping of FairFace Latino/Southeast-Asian predictions to Indian ROI rules) and emphasize that FairFace routing is an ROI prior, not part of the colorimetric model.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=============================================================================
+\section{Problem setting and naming}
+%=============================================================================
+
+\subsection{Goal}
+Recover a single cheek CIELAB triple under CIE illuminant D65 from an indoor iPhone flash/no-flash ProRAW pair, without an in-scene ColorChecker at inference, and without FitSkin contact measurements in the color transform.
+FitSkin Inside Lab is used \emph{only} as the evaluation target.
+
+\subsection{Pipeline name}
+We refer to the recommended deployment configuration as
+\begin{center}
+  \textbf{\pipename{}}
+\end{center}
+(``D65'' = evaluation white point; ``FairFace7'' = seven-class race prior; ``ROI'' = specular/shadow-aware cheek sampling).
+CLI equivalent:
+\begin{verbatim}
+python3 scripts/evaluate_pansor20_chartfree_d65.py \
+  --scr-mode preawb_cat --fixed-cat-k 5500 \
+  --l-sampling fairface7 --emily-tsv
+\end{verbatim}
+
+\subsection{What is frozen vs.\ heuristic}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Frozen color path (claimable colorimetry):}
+    pre-AWB reflectance $\to$ pooled \texttt{tier3\_affine} $\to$ fixed 5500\,K Bradford CAT$\to$D65 $\to$ trimmed-mean cheek Lab.
+    Alone: mean $\deee=\num{5.55}$.
+  \item \textbf{Heuristic ROI policy (not a colorimetric model):}
+    ethnicity-conditioned cheek $L^*$ / chroma sampling (\texttt{specular\_tone}), with ethnicity predicted by FairFace-7.
+    Cohort-tuned thresholds; expected to regress on held-out phones/lighting.
+\end{itemize}
+
+%=============================================================================
+\section{Cohort, reference, and metrics}
+%=============================================================================
+
+\subsection{Indoor chart-free Pansor-20 set}
+We use only indoor face captures from the Pansor Dataset (Participants~1--20): zip archives containing paired no-flash / flash DNGs and Apple Vision face landmarks.
+Excluded stems containing \texttt{bag}, \texttt{outside}, or \texttt{light} (bag / outdoor / lightbox variants).
+This yields $N=65$ trials (same indoor chart-free cohort size as the Hybrid D65 Colab walkthrough).
+Trials P16\_T1 and P18\_T1 are absent from this set.
+
+\subsection{Demographics and FitSkin reference}
+FitSkin Inside Lab $(L^*,a^*,b^*)$ and self-reported ethnicity (Asian, Black, Indian, Iranian, White) come from \texttt{Pansor Dataset Demographics.xlsx}.
+Ethnicity is used for oracle ablations and stratified reporting; \textbf{it is not an input to \pipename{} at deployment}.
+
+\subsection{Error metric}
+Agreement is CIEDE2000 ($\deee$) between pipeline cheek Lab and FitSkin Inside Lab under D65~\cite{sharma2005ciede2000}.
+We report mean and median over trials, and means stratified by demographics ethnicity.
+
+%=============================================================================
+\section{Data ingestion}
+%=============================================================================
+
+\subsection{Demosaic}
+Each DNG is demosaiced with \texttt{rawpy} to linear camera RGB:
+\begin{itemize}[noitemsep]
+  \item \texttt{half\_size=True} (evaluation default);
+  \item \texttt{gamma=(1,1)}, \texttt{no\_auto\_bright=True}, 16-bit;
+  \item per-image scale by the 99.5th percentile of RGB so values are roughly in $[0,1]$.
+\end{itemize}
+Two white-balance modes are retained for ablations:
+\begin{itemize}[noitemsep]
+  \item \textbf{Camera WB:} \texttt{use\_camera\_wb=True} (production / older reflectance path);
+  \item \textbf{Pre-AWB:} \texttt{use\_camera\_wb=False} (winning color path).
+\end{itemize}
+
+\subsection{Cheek ROI geometry}
+Apple Vision landmark JSON in each zip defines face regions.
+We build a cheek mask as the intersection of a face hull (face contour $\cup$ brows) with an eye--mouth vertical band, excluding dilated eyes/brows/lips---matching the zip-landmark path used in prior Hybrid D65 evaluations (not MediaPipe unless \texttt{--roi mediapipe}).
+
+\subsection{Flash exposure match and reflectance}
+Let $\mathbf{A}$ be no-flash linear RGB and $\mathbf{B}$ flash linear RGB (resized to $\mathbf{A}$ if needed).
+Flash is scaled so median luma on the cheek mask matches no-flash:
+\begin{equation}
+  \mathbf{B}' = s\,\mathbf{B},\qquad
+  s = \frac{\mathrm{median}\{\ell(\mathbf{A})\}_{\mathrm{cheek}}}
+           {\mathrm{median}\{\ell(\mathbf{B})\}_{\mathrm{cheek}}+\varepsilon},
+\end{equation}
+with $\ell(\cdot)$ Rec.\,709 luma.
+Per-pixel flash/no-flash reflectance is the geometric mean
+\begin{equation}
+  \Rvec = \sqrt{\max(\mathbf{A}\odot\mathbf{B}',\,\varepsilon)}.
+\end{equation}
+Pre-AWB frames yield $\Rvec_0$ from $(\mathbf{A}_0,\mathbf{B}_0')$; camera-WB frames yield $\Rvec$.
+
+%=============================================================================
+\section{Frozen colorimetric path}
+\label{sec:color}
+%=============================================================================
+
+\subsection{Camera RGB $\to$ XYZ}
+Cheek pixels of reflectance are mapped to CIE XYZ (approximate camera space) by the pooled offline affine
+\begin{equation}
+  \begin{bmatrix} X & Y & Z \end{bmatrix}
+  =
+  \begin{bmatrix} R & G & B & 1 \end{bmatrix}
+  \Maff,
+\end{equation}
+with $\Maff\in\mathbb{R}^{4\times 3}$ loaded from \texttt{calibration/tier3\_affine}
+(\texttt{camera\_rgb\_to\_xyz\_affine.npy} / calibration bundle).
+Negative XYZ values are clipped at zero before Lab.
+
+\subsection{Fixed Planckian CAT to D65}
+Rather than estimating illuminant per image, we adapt from a fixed daylight-like white.
+Let $\mathbf{W}_{5500}$ be CIE XYZ of a $Y{=}1$ Planckian radiator at 5500\,K, and $\mathbf{W}_{\mathrm{D65}}=(0.95047,\,1,\,1.08883)$.
+Bradford chromatic adaptation~\cite{lam1985,fairchild2013} maps scene XYZ to D65:
+\begin{equation}
+  \mathbf{X}_{\mathrm{D65}}
+  =
+  \mathbf{X}_{\mathrm{cam}}\,
+  \mathbf{M}_{\mathrm{Bradford}}(\mathbf{W}_{5500}\!\to\!\mathbf{W}_{\mathrm{D65}})^{\mathsf{T}}.
+\end{equation}
+CIELAB is then computed with D65 white.
+This path corresponds to evaluation mode \texttt{preawb\_cat} with \texttt{--fixed-cat-k 5500}.
+
+\paragraph{Why pre-AWB + fixed CAT.}
+Camera WB already adapts toward an assumed white; stacking SCR/CAT on camera-WB reflectance double-adapts and raised mean $\deee$ in ablations (${\sim}7$).
+Pre-AWB reflectance plus a single fixed CAT matched the best FitSkin-free color path among illuminant estimators tried (including daylight SCR variants).
+
+\subsection{Default cheek aggregation (no ROI heuristic)}
+On chroma-filtered cheek Lab pixels ($C_{ab}^*=\sqrt{a^{*2}+b^{*2}}\ge 2$ when enough pixels remain), we take a symmetric 5\% trimmed mean on each of $L^*,a^*,b^*$.
+This is \texttt{--l-sampling off}: mean $\deee=\num{5.55}$ on $N=65$.
+
+%=============================================================================
+\section{Rejected and secondary colorimetric attempts}
+\label{sec:rejected}
+%=============================================================================
+
+The following were evaluated on the same cohort and \textbf{not} used in \pipename{}:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Tone-specific dark affine for Black participants} (\texttt{tier3\_by\_tone/dark}):
+    Black mean $\deee$ rose from ${\sim}6.3$ to ${\sim}11.4$ (L* collapse). Rejected.
+  \item \textbf{Residual Color Pass-Through / Lab affine trained on FitSkin:}
+    Improves in-sample numbers but violates the FitSkin-free generalization constraint for claims. Rejected for deployment claims.
+  \item \textbf{Leave-one-out Lab$\to$FitSkin affine:}
+    Mean $\deee\approx\num{4.37}$ but is not a generalization result. Rejected.
+  \item \textbf{SCR-AWB (Zhou/Kaida-style) as primary illuminant}~\cite{zhou2025scr}:
+    Useful as an illuminant research path; with flash SPD in the basis, CCT often locked near 5500\,K and matched pre-AWB+fixed CAT---gain was preprocessing/CAT, not per-image ISSA SCR.
+    Daylight SCR variants did not beat $\num{5.55}$ enough to replace the frozen path.
+  \item \textbf{MediaPipe cheek ROI} with the same affine:
+    Worse than Apple landmark cheeks on this cohort (${\sim}6.4$ vs.\ production landmark baseline).
+\end{itemize}
+
+%=============================================================================
+\section{Heuristic cheek sampling (\texttt{specular\_tone})}
+\label{sec:roi}
+%=============================================================================
+
+\subsection{Motivation}
+Error diagnosis on the frozen path showed \textbf{signed $L^*$ bias by tone}:
+\begin{itemize}[noitemsep]
+  \item Black: pipeline $L^*$ too high (flash speculars; mean $\Delta L^*\approx +6.4$);
+  \item White (underexposed cheeks): $L^*$ too low;
+  \item Indian / Asian / Iranian: mixed shadow vs.\ slight over-bright subgroups.
+\end{itemize}
+These are addressed by changing \emph{which cheek pixels} define Lab---not by changing $\Maff$ or CAT.
+
+\subsection{Oracle policy (demographics ethnicity)}
+When true ethnicity is available (ablation only), \texttt{specular\_tone} applies:
+
+\begin{description}[style=nextline,leftmargin=1.2em]
+  \item[Black]
+    $L^* \leftarrow$ 10th percentile of cheek $L^*$; $a^*,b^*$ from trimmed means
+    (reject specular inflation).
+  \item[White]
+    If mean cheek $L^* < 58$: $L^* \leftarrow$ 70th percentile; else trimmed mean
+    (boost underexposed light skin; skip already-bright faces).
+  \item[Indian]
+    If mean $a^* < 11.5$: drop darkest 20\% of $L^*$ and take $a^*,b^*$ from the higher-chroma half
+    (shadow / desaturation);
+    else $L^* \leftarrow$ 35th percentile (mild darken for high-$a^*$ cheeks).
+  \item[Asian / Iranian (medium)]
+    If $a^* < 10$: same shadow+high-chroma branch;
+    else if mean $C_{ab}^* < 24$: $L^* \leftarrow$ 70th percentile;
+    else trimmed mean.
+\end{description}
+
+Oracle (demographics) mean $\deee=\num{3.23}$.
+This is an \textbf{in-sample heuristic ceiling}, not a validated colorimetric claim.
+
+\subsection{FitSkin-free routers (before FairFace)}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Lab tone/chroma logistic ethnicity classifier}
+    (features: $L^*,a^*,b^*,C^*,\mathrm{ITA},L_{p10,50,90}$; labels = demographics ethnicity; never FitSkin Lab).
+    Leave-one-subject-out (LOSO): ethnicity accuracy ${\sim}52\%$, mean $\deee\approx\num{3.89}$.
+  \item \textbf{Soft accuracy} (same ROI branch despite wrong ethnicity label): ${\sim}75\%$---many Asian/Indian/Iranian confusions are harmless for sampling.
+\end{itemize}
+Conclusion: race-from-Lab is weak; a face CNN prior is preferable for deployment.
+
+%=============================================================================
+\section{FairFace runtime prior}
+\label{sec:fairface}
+%=============================================================================
+
+\subsection{Model}
+We use FairFace ResNet-34~\cite{karkkainen2021fairface} with the 7-class race head
+(White, Black, Latino\_Hispanic, East Asian, Southeast Asian, Indian, Middle Eastern),
+weights \texttt{res34\_fair\_align\_multi\_7\_20190809.pt}.
+The 4-class model was also evaluated; it raised mean $\deee$ to $\num{4.17}$ (Iranian$\to$Indian and some Indian$\to$Black errors) and is \textbf{not} used.
+
+\subsection{Face crop (no dlib)}
+From the pre-AWB no-flash frame we form an 8-bit sRGB preview (per-channel percentile stretch + gamma-less display path used elsewhere for detection).
+Apple Vision landmarks define a padded axis-aligned face crop, resized to $224{\times}224$ RGB (approximation of FairFace's aligned face chip).
+
+\subsection{Label map to ROI branches}
+FairFace labels are mapped to the ethnicity keys expected by \texttt{specular\_tone}:
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+FairFace-7 & ROI branch key \\
+\midrule
+Black & Black \\
+White & White \\
+East Asian, Southeast Asian & Asian \\
+Indian & Indian \\
+Middle Eastern & Iranian \\
+Latino\_Hispanic & Asian \\
+\bottomrule
+\end{tabular}
+\end{center}
+\paragraph{Recommendation on grouping.}
+We \textbf{do not} remap Latino\_Hispanic / Southeast Asian to Indian.
+That remap fixes some Indian trials (e.g.\ Utsav) but harms others (e.g.\ Eric, Sanaz) and raises overall mean $\deee$ (e.g.\ $\num{3.63}\to\num{3.84}$).
+Asian medium ROI is the safer default for FairFace's ambiguous medium predictions.
+
+\subsection{Deployment algorithm}
+\begin{algorithm}[H]
+\caption{\pipename{} inference (chart-free)}
+\begin{algorithmic}[1]
+\Require Flash/no-flash DNGs, Apple landmarks, $\Maff$, FairFace-7 weights
+\State Demoise/demosaic both DNGs \textbf{without} camera WB $\to \mathbf{A}_0,\mathbf{B}_0$
+\State Build cheek mask from landmarks; exposure-match flash on cheek; $\Rvec_0=\sqrt{\mathbf{A}_0\odot\mathbf{B}_0'}$
+\State Preview $\mathbf{A}_0$; crop face; FairFace-7 $\to$ ethnicity key $e$
+\State Map cheek $\Rvec_0$ pixels $\xrightarrow{\Maff}$ XYZ $\xrightarrow{\mathrm{CAT}_{5500\to\mathrm{D65}}}$ Lab
+\State Aggregate Lab with \texttt{specular\_tone} rules for ethnicity $e$
+\State \Return cheek $(L^*,a^*,b^*)$ under D65
+\end{algorithmic}
+\end{algorithm}
+
+%=============================================================================
+\section{Results}
+\label{sec:results}
+%=============================================================================
+
+\subsection{Headline comparison}
+\begin{table}[h]
+\centering
+\caption{Mean CIEDE2000 on Pansor-20 indoor chart-free ($N=65$). FitSkin is evaluation-only.}
+\label{tab:headline}
+\begin{tabular}{lccc}
+\toprule
+Method & Runtime race labels & Mean $\deee$ & Median $\deee$ \\
+\midrule
+Camera-WB + affine (production gate) & --- & ${\sim}5.93$ & --- \\
+Frozen color (\texttt{preawb\_cat}, sampling off) & --- & 5.55 & 5.67 \\
+Lab tone$\to$ethnicity + ROI (LOSO) & no & 3.89 & --- \\
+\textbf{\pipename{} (FairFace-7 + ROI)} & \textbf{no} & \textbf{3.63} & \textbf{3.44} \\
+Demographics ethnicity + ROI (oracle) & yes & 3.23 & 3.06 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Stratified performance (\pipename{})}
+\begin{table}[h]
+\centering
+\caption{\pipename{} by demographics ethnicity (stratification only; not a model input).}
+\label{tab:eth}
+\begin{tabular}{lrrr}
+\toprule
+Ethnicity & $n$ & Mean $\deee$ & Median $\deee$ \\
+\midrule
+Asian   & 13 & 2.94 & 2.65 \\
+Black   & 14 & 3.34 & 3.45 \\
+Indian  & 18 & 4.12 & 3.23 \\
+Iranian &  6 & 3.47 & 3.63 \\
+White   & 14 & 4.00 & 3.84 \\
+\midrule
+All     & 65 & 3.63 & 3.44 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+FairFace-7 hard ethnicity accuracy vs.\ demographics is ${\sim}69\%$ on this cohort; Black and White are essentially correct.
+Indian is the weakest stratum: FairFace often predicts Latino\_Hispanic or Southeast Asian, which we map to Asian ROI---acceptable for many trials, but costly when the Indian high-$a^*$ ($L_{p35}$) branch was needed (notably Utsav).
+
+\subsection{FairFace-4 vs.\ FairFace-7}
+FairFace-4 hard accuracy was higher (${\sim}78\%$) but mean $\deee$ worse ($\num{4.17}$), driven by Iranian$\to$Indian and selected Indian$\to$Black misroutes.
+\textbf{FairFace-7 is preferred.}
+
+%=============================================================================
+\section{Implementation artifacts}
+%=============================================================================
+
+\begin{itemize}[leftmargin=*]
+  \item Evaluation: \texttt{scripts/evaluate\_pansor20\_chartfree\_d65.py}
+  \item FairFace wrapper: \texttt{models/fairface\_race.py}
+  \item Weights: \texttt{calibration/fairface/}
+  \item Emily-format export: \texttt{results/pansor20\_fairface7/table\_emily\_format.tsv}
+  \item Summary JSON: \texttt{results/pansor20\_fairface7/summary.json}
+  \item ROI LOSO (Lab classifier): \texttt{scripts/validate\_roi\_sampling\_loso.py},
+    \texttt{results/pansor20\_roi\_loso/}
+\end{itemize}
+
+%=============================================================================
+\section{Limitations and reporting guidance}
+%=============================================================================
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{\texttt{specular\_tone} thresholds} ($L$ percentiles, $a^*$/$C^*$ gates, $L^*{<}58$) were tuned on this cohort.
+    Treat ROI as a heuristic; quote frozen-path $\deee=\num{5.55}$ for colorimetry-only claims.
+  \item \textbf{FairFace} is trained on sRGB web faces; ProRAW preview crops may shift predictions.
+    It is a demographic/ROI prior, not a skin-tone instrument.
+  \item \textbf{Single phone / indoor set.} Cross-device and outdoor generalization are unproven here.
+  \item \textbf{Cross-session FitSkin.} Demographics FitSkin Lab is not same-moment paired with every trial; absolute $\deee$ includes temporal and protocol variance.
+  \item \textbf{Ethics.} Race classification in product flows requires careful UX and policy framing; prefer describing FairFace as an appearance prior for sampling, not identity assertion.
+\end{enumerate}
+
+\paragraph{Suggested paper wording.}
+``We freeze a FitSkin-free colorimetric path (pre-AWB flash/no-flash reflectance, pooled affine, fixed 5500\,K Bradford adaptation to D65; mean $\deee=\num{5.55}$).
+Optionally, FairFace-7 on a landmark face crop selects a cheek sampling policy that reduces mean $\deee$ to $\num{3.63}$ without demographics labels at runtime.
+The sampling policy is a heuristic ROI router, validated against FitSkin for error reporting only.''
+
+%=============================================================================
+\section*{Acknowledgments / code}
+%=============================================================================
+FairFace models: Karkkainen \& Joo~\cite{karkkainen2021fairface}.
+Evaluation code and pinned tables: FitSkin repository paths listed above.
+
+\begin{thebibliography}{99}
+
+\bibitem{sharma2005ciede2000}
+G.~Sharma, W.~Wu, and E.~N.~Dalal,
+``The CIEDE2000 color-difference formula: Implementation notes, supplementary test data, and mathematical observations,''
+\textit{Color Research \& Application}, vol.~30, no.~1, pp.~21--30, 2005.
+
+\bibitem{lam1985}
+K.~M.~Lam,
+``Metamerism and colour constancy,''
+Ph.D.\ thesis, University of Bradford, 1985.
+% Bradford transform lineage; see also Fairchild, Color Appearance Models.
+
+\bibitem{fairchild2013}
+M.~D.~Fairchild,
+\textit{Color Appearance Models}, 3rd~ed.
+Wiley, 2013.
+
+\bibitem{karkkainen2021fairface}
+K.~Karkkainen and J.~Joo,
+``FairFace: Face attribute dataset for balanced race, gender, and age for bias measurement and mitigation,''
+in \textit{Proc.\ IEEE/CVF WACV}, 2021, pp.~1548--1558.
+
+\bibitem{zhou2025scr}
+Z.~Zhou et al.,
+``Skin Color based Reflectance Auto White Balance (SCR-AWB),''
+\textit{Technologies}, vol.~13, no.~232, 2025.
+
+\bibitem{lu2006practical}
+C.~Lu and M.~S.~Drew,
+``Practical scene illuminant estimation via flash/no-flash pairs,''
+in \textit{Proc.\ CIC}, 2006.
+
+\end{thebibliography}
+
+\end{document}

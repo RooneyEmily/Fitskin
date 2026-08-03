@@ -1,0 +1,16 @@
+{
+  "n_trials": 65,
+  "n_people": 20,
+  "train_accuracy_in_sample": 0.7846153846153846,
+  "classes": [
+    "Asian",
+    "Black",
+    "Indian",
+    "Iranian",
+    "White"
+  ],
+  "out": "/home/mabl-main/color_space_research/new/Fitskin/calibration/roi_tone_chroma/ethnicity_logreg.json",
+  "fitskin_used": false,
+  "label_source": "demographics_ethnicity",
+  "color_path": "preawb_cat@5500K"
+}
