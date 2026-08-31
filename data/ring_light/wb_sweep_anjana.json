@@ -1,0 +1,107 @@
+{
+  "description": "Anjana \u00d7 all available capture WB cells (F12-A absent in cohort for everyone).",
+  "person": "Anjana",
+  "note": "Compare \u0394E across wb_cell within each illuminant. Pipeline uses pre-AWB demosaic.",
+  "capture_wb_k": {
+    "D65": {
+      "A": 5500,
+      "B": 6000,
+      "C": 6500,
+      "D": 7000,
+      "E": 7500
+    },
+    "F12": {
+      "A": 2500,
+      "B": 2500,
+      "C": 3000,
+      "D": 3500,
+      "E": 4000
+    }
+  },
+  "demos": [
+    {
+      "file": "Anjana-D65-C3Torch.zip",
+      "person": "Anjana",
+      "illuminant": "D65",
+      "wb_cell": "C",
+      "capture_wb_k": 6500,
+      "fitskin_forehead": {
+        "L": 37.63,
+        "a": 11.4,
+        "b": 18.29
+      }
+    },
+    {
+      "file": "Anjana-D65-D3Torch.zip",
+      "person": "Anjana",
+      "illuminant": "D65",
+      "wb_cell": "D",
+      "capture_wb_k": 7000,
+      "fitskin_forehead": {
+        "L": 37.63,
+        "a": 11.4,
+        "b": 18.29
+      }
+    },
+    {
+      "file": "Anjana-D65-E4Torch.zip",
+      "person": "Anjana",
+      "illuminant": "D65",
+      "wb_cell": "E",
+      "capture_wb_k": 7500,
+      "fitskin_forehead": {
+        "L": 37.63,
+        "a": 11.4,
+        "b": 18.29
+      }
+    },
+    {
+      "file": "AnjanaF12B1Torch.zip",
+      "person": "Anjana",
+      "illuminant": "F12",
+      "wb_cell": "B",
+      "capture_wb_k": 2500,
+      "fitskin_forehead": {
+        "L": 40.39,
+        "a": 11.75,
+        "b": 22.21
+      }
+    },
+    {
+      "file": "Arjana-F12C2Torch.zip",
+      "person": "Anjana",
+      "illuminant": "F12",
+      "wb_cell": "C",
+      "capture_wb_k": 3000,
+      "fitskin_forehead": {
+        "L": 40.39,
+        "a": 11.75,
+        "b": 22.21
+      }
+    },
+    {
+      "file": "ArjanaF12D1Torch.zip",
+      "person": "Anjana",
+      "illuminant": "F12",
+      "wb_cell": "D",
+      "capture_wb_k": 3500,
+      "fitskin_forehead": {
+        "L": 40.39,
+        "a": 11.75,
+        "b": 22.21
+      }
+    },
+    {
+      "file": "Ariana-F12-E1Torch.zip",
+      "person": "Anjana",
+      "illuminant": "F12",
+      "wb_cell": "E",
+      "capture_wb_k": 4000,
+      "fitskin_forehead": {
+        "L": 40.39,
+        "a": 11.75,
+        "b": 22.21
+      }
+    }
+  ]
+}

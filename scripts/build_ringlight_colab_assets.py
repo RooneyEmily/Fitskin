@@ -29,6 +29,8 @@ INCLUDE = [
     "models/fairface_race.py",
     "scripts/evaluate_pansor20_chartfree_d65.py",
     "scripts/run_d65_fairface7_roi.py",
+    "data/ring_light/eval_n84_by_wb_cell.json",
+    "data/ring_light/wb_sweep_parker.json",
     "flash_no_flash_spectral.py",
     "delta_e_2000.py",
 ]

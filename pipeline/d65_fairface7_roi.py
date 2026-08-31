@@ -6,8 +6,9 @@ Frozen color path:
 
 ROI:
   ``roi='forehead'`` (FitSkin scan site) or ``roi='cheek'`` (legacy Pansor path).
-  FairFace-7 specular/shadow sampling applies on cheek only; forehead uses
-  trimmed mean. Use ``sampling='off'`` for trimmed-mean on any ROI.
+  FairFace-7 routes ``specular_tone`` L* sampling on cheek and forehead (same rules
+  as Pansor). On uniform forehead Lab (narrow L* spread), cheek pixels are pooled
+  for specular_tone when illuminant is F12 or FairFace ethnicity is Indian.
 
 No FitSkin, demographics, SCR-AWB, Lab correctors, or person-specific gates.
 """
@@ -44,8 +45,12 @@ from pipeline.post_corrections import (  # noqa: E402
     apply_multi_illuminant_lab_affine,
 )
 from models.fairface_race import FairFacePredictor, face_rgb_crop_from_landmarks  # noqa: E402
-from pipeline.skin_roi import apple_face_skin_roi_mask  # noqa: E402
+from pipeline.skin_roi import (  # noqa: E402
+    apple_face_forehead_lab_pool_mask,
+    apple_face_skin_roi_mask,
+)
 from scripts.evaluate_pansor20_chartfree_d65 import (  # noqa: E402
+    FOREHEAD_L_UNIFORM_STD,
     FOREHEAD_SKIN_LAB_TRIM,
     extract_zip,
     linear_rgb_to_preview_bgr,
@@ -54,6 +59,7 @@ from scripts.evaluate_pansor20_chartfree_d65 import (  # noqa: E402
     load_dng_linear,
     match_flash_exposure,
     mean_lab_on_mask,
+    probe_forehead_lab_l_std,
 )
 
 DEFAULT_CAL_DIR = ROOT / "calibration" / "tier3_affine"
@@ -254,10 +260,7 @@ class D65FairFace7ROIPipeline:
         fairface_meta: Dict[str, Any] = {}
         sampling_mode = "off"
         ethnicity_for_sampling: Optional[str] = None
-        use_specular_tone = (
-            roi_key == "cheek"
-            and self.sampling in ("fairface", "fairface7", "fairface4")
-        )
+        use_specular_tone = self.sampling in ("fairface", "fairface7", "fairface4")
         if self.sampling in ("fairface", "fairface7", "fairface4"):
             if self.fairface is None:
                 raise RuntimeError("FairFace sampling requested but predictor not loaded")
@@ -313,9 +316,39 @@ class D65FairFace7ROIPipeline:
             xyz_white = planck_xyz_y1(float(self.fixed_cat_k), 0.0)
             cat_meta["cat_cct"] = float(self.fixed_cat_k)
 
+        lab_mask = skin_mask
+        lab_pool_meta: Dict[str, Any] = {}
+        if (
+            roi_key == "forehead"
+            and sampling_mode == "specular_tone"
+        ):
+            l_std = probe_forehead_lab_l_std(
+                R0,
+                skin_mask,
+                self.M,
+                projector=self.color_projector,
+                xyz_scene_white=xyz_white,
+                cat_degree=float(self.cat_degree),
+                skin_lab_trim=FOREHEAD_SKIN_LAB_TRIM,
+            )
+            ill_u = str(illuminant_label or "D65").upper()
+            eth_l = str(ethnicity_for_sampling or "").strip().lower()
+            expand_pool = l_std < FOREHEAD_L_UNIFORM_STD and (
+                eth_l == "indian" or ill_u in ("F12", "D12")
+            )
+            lab_pool_meta["forehead_L_std"] = l_std
+            if expand_pool:
+                lab_mask = apple_face_forehead_lab_pool_mask(
+                    lm, A0.shape[0], A0.shape[1], linear_rgb=A0
+                )
+                lab_pool_meta["lab_pool_expanded"] = True
+            else:
+                lab_pool_meta["lab_pool_expanded"] = False
+                sampling_mode = "off"
+
         Lab, sample_meta = mean_lab_on_mask(
             R0,
-            skin_mask,
+            lab_mask,
             self.M,
             projector=self.color_projector,
             xyz_scene_white=xyz_white,
@@ -324,6 +357,7 @@ class D65FairFace7ROIPipeline:
             ethnicity=ethnicity_for_sampling,
             skin_lab_trim=FOREHEAD_SKIN_LAB_TRIM if roi_key == "forehead" else None,
         )
+        sample_meta.update(lab_pool_meta)
 
         lab_corr_key: Optional[str] = None
         if self.multi_lab_bundle is not None:
@@ -362,6 +396,8 @@ class D65FairFace7ROIPipeline:
             "roi_sampling_mode": sampling_mode,
             "skin_binning": sample_meta.get("skin_binning"),
             "skin_binning_kept_frac": sample_meta.get("skin_binning_kept_frac"),
+            "forehead_L_std": sample_meta.get("forehead_L_std"),
+            "lab_pool_expanded": sample_meta.get("lab_pool_expanded"),
             "cal_dir": str(self.cal_dir) if self.cal_dir else None,
             "l_percentile": sample_meta.get("l_percentile"),
             "indian_branch": sample_meta.get("indian_branch"),

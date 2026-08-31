@@ -155,6 +155,31 @@ FOREHEAD_SKIN_LAB_TRIM: Dict[str, float] = {
     **SKIN_LAB_TRIM_DEFAULT,
     "l_star_trim_hi": 0.10,
 }
+# Forehead Lab L* std below this → pool cheek pixels for specular_tone (narrow range).
+FOREHEAD_L_UNIFORM_STD = 2.5
+
+
+def _clip_skin_trim_q(q: float) -> float:
+    if q <= 0.0:
+        return 0.0
+    return min(float(q), 0.45)
+
+
+def _apply_channel_quantile_trim(
+    sel: np.ndarray,
+    channel: np.ndarray,
+    trim_lo: float,
+    trim_hi: float,
+) -> np.ndarray:
+    """Keep pixels inside [Q_lo, Q_hi] quantile bounds on one Lab channel."""
+    out = sel.copy()
+    tlo = _clip_skin_trim_q(trim_lo)
+    thi = _clip_skin_trim_q(trim_hi)
+    if tlo > 0.0:
+        out &= channel >= float(np.quantile(channel, tlo))
+    if thi > 0.0:
+        out &= channel <= float(np.quantile(channel, 1.0 - thi))
+    return out
 
 
 def apply_skin_lab_binning(
@@ -170,8 +195,6 @@ def apply_skin_lab_binning(
     min_keep: int = 40,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """Quantile binning on masked Lab pixels (tan/gray histogram gates)."""
-    from physio_skin_lab_monk import _apply_channel_quantile_trim
-
     lab = np.asarray(lab, dtype=np.float64)
     if lab.ndim != 2 or lab.shape[1] != 3 or lab.shape[0] < 10:
         return lab, {"skin_binning": False, "n_before": int(lab.shape[0]), "n_after": int(lab.shape[0])}
@@ -299,6 +322,65 @@ def mean_lab_on_mask(
     else:
         out = _trimmed_mean_lab(lab, trim=trim)
     return out, meta
+
+
+def masked_skin_lab_pixels(
+    rgb: np.ndarray,
+    mask: np.ndarray,
+    M_aff: np.ndarray,
+    *,
+    projector: Optional[Any] = None,
+    xyz_scene_white: Optional[np.ndarray] = None,
+    cat_degree: float = 1.0,
+    skin_lab_trim: Optional[Dict[str, float]] = None,
+    min_chroma: float = 2.0,
+) -> np.ndarray:
+    """Masked skin pixels in D65 Lab (after optional binning), for diagnostics."""
+    if projector is not None:
+        from models.color_projector import apply_color_projector_rgb
+
+        xyz = apply_color_projector_rgb(rgb, projector, use_green_blur=True)
+        pix_xyz = np.maximum(xyz[mask > 0], 0.0)
+    else:
+        pix = rgb[mask > 0]
+        pix_xyz = np.maximum(rgb_to_xyz_affine(pix, M_aff), 0.0)
+    if xyz_scene_white is not None:
+        cat = bradford_cat_matrix(np.asarray(xyz_scene_white, dtype=np.float64), D65)
+        adapted = pix_xyz @ cat.T
+        d = float(np.clip(cat_degree, 0.0, 1.0))
+        pix_xyz = (1.0 - d) * pix_xyz + d * adapted
+    lab = xyz_to_lab(pix_xyz)
+    if skin_lab_trim:
+        lab, _ = apply_skin_lab_binning(lab, min_keep=40, **skin_lab_trim)
+    else:
+        C = np.hypot(lab[:, 1], lab[:, 2])
+        lab = lab[C >= min_chroma] if (C >= min_chroma).sum() >= 10 else lab
+    return lab
+
+
+def probe_forehead_lab_l_std(
+    rgb: np.ndarray,
+    forehead_mask: np.ndarray,
+    M_aff: np.ndarray,
+    *,
+    projector: Optional[Any] = None,
+    xyz_scene_white: Optional[np.ndarray] = None,
+    cat_degree: float = 1.0,
+    skin_lab_trim: Optional[Dict[str, float]] = None,
+) -> float:
+    """Std dev of forehead-mask Lab L* after binning (uniformity probe)."""
+    lab = masked_skin_lab_pixels(
+        rgb,
+        forehead_mask,
+        M_aff,
+        projector=projector,
+        xyz_scene_white=xyz_scene_white,
+        cat_degree=cat_degree,
+        skin_lab_trim=skin_lab_trim,
+    )
+    if lab.ndim != 2 or lab.shape[0] < 10:
+        return float("inf")
+    return float(np.std(lab[:, 0]))
 
 
 # Specular/shadow-aware cheek sampling — HEURISTIC ROI POLICY (not a colorimetric

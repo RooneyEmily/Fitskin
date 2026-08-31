@@ -1,0 +1,131 @@
+{
+  "description": "Lihn \u00d7 all available capture WB cells (F12-A absent in cohort).",
+  "person": "Lihn",
+  "note": "Compare \u0394E across wb_cell within each illuminant. Pipeline uses pre-AWB demosaic. Zip stems may say Linh.",
+  "capture_wb_k": {
+    "D65": {
+      "A": 5500,
+      "B": 6000,
+      "C": 6500,
+      "D": 7000,
+      "E": 7500
+    },
+    "F12": {
+      "A": 2500,
+      "B": 2500,
+      "C": 3000,
+      "D": 3500,
+      "E": 4000
+    }
+  },
+  "demos": [
+    {
+      "file": "LinhD65-A1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "D65",
+      "wb_cell": "A",
+      "capture_wb_k": 5500,
+      "fitskin_forehead": {
+        "L": 55.24,
+        "a": 10.98,
+        "b": 20.58
+      }
+    },
+    {
+      "file": "LinhD65-B2torch.zip",
+      "person": "Lihn",
+      "illuminant": "D65",
+      "wb_cell": "B",
+      "capture_wb_k": 6000,
+      "fitskin_forehead": {
+        "L": 55.24,
+        "a": 10.98,
+        "b": 20.58
+      }
+    },
+    {
+      "file": "LihnD65-C1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "D65",
+      "wb_cell": "C",
+      "capture_wb_k": 6500,
+      "fitskin_forehead": {
+        "L": 55.24,
+        "a": 10.98,
+        "b": 20.58
+      }
+    },
+    {
+      "file": "Linh-D65-D1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "D65",
+      "wb_cell": "D",
+      "capture_wb_k": 7000,
+      "fitskin_forehead": {
+        "L": 55.24,
+        "a": 10.98,
+        "b": 20.58
+      }
+    },
+    {
+      "file": "Linh-D65-E1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "D65",
+      "wb_cell": "E",
+      "capture_wb_k": 7500,
+      "fitskin_forehead": {
+        "L": 55.24,
+        "a": 10.98,
+        "b": 20.58
+      }
+    },
+    {
+      "file": "Lihn-F12-B1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "F12",
+      "wb_cell": "B",
+      "capture_wb_k": 2500,
+      "fitskin_forehead": {
+        "L": 57.44,
+        "a": 10.46,
+        "b": 21.16
+      }
+    },
+    {
+      "file": "Lihn-F12-C1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "F12",
+      "wb_cell": "C",
+      "capture_wb_k": 3000,
+      "fitskin_forehead": {
+        "L": 57.44,
+        "a": 10.46,
+        "b": 21.16
+      }
+    },
+    {
+      "file": "Lihn-F12-D3Torch.zip",
+      "person": "Lihn",
+      "illuminant": "F12",
+      "wb_cell": "D",
+      "capture_wb_k": 3500,
+      "fitskin_forehead": {
+        "L": 57.44,
+        "a": 10.46,
+        "b": 21.16
+      }
+    },
+    {
+      "file": "Lihn-F12-E1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "F12",
+      "wb_cell": "E",
+      "capture_wb_k": 4000,
+      "fitskin_forehead": {
+        "L": 57.44,
+        "a": 10.46,
+        "b": 21.16
+      }
+    }
+  ]
+}

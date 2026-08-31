@@ -522,19 +522,34 @@ def summarize(rows: List[Dict[str, Any]], arms: List[str]) -> Dict[str, Any]:
         "overall": {},
         "by_illuminant": {},
         "by_person_illuminant": {},
+        "by_wb_cell": {},
+        "by_illuminant_wb_cell": {},
         "illuminant_estimation": {},
     }
     for arm in arms:
         out["overall"][arm] = stats([r[f"de00_{arm}"] for r in rows])
     by_ill: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     by_pi: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    by_wb: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    by_ill_wb: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for r in rows:
         by_ill[r["illuminant"]].append(r)
         by_pi[f"{r['person']}_{r['illuminant']}"].append(r)
+        cell = str(r.get("wb_cell") or "").strip().upper()
+        if cell:
+            by_wb[cell].append(r)
+            by_ill_wb[f"{r['illuminant']}_{cell}"].append(r)
     for ill, grp in sorted(by_ill.items()):
         out["by_illuminant"][ill] = {arm: stats([x[f"de00_{arm}"] for x in grp]) for arm in arms}
     for key, grp in sorted(by_pi.items()):
         out["by_person_illuminant"][key] = {arm: stats([x[f"de00_{arm}"] for x in grp]) for arm in arms}
+    for cell, grp in sorted(by_wb.items()):
+        out["by_wb_cell"][cell] = {arm: stats([x[f"de00_{arm}"] for x in grp]) for arm in arms}
+    for key, grp in sorted(by_ill_wb.items()):
+        ill, cell = key.split("_", 1)
+        out["by_illuminant_wb_cell"].setdefault(ill, {})[cell] = {
+            arm: stats([x[f"de00_{arm}"] for x in grp]) for arm in arms
+        }
 
     out["illuminant_estimation"] = {
         "lu_spd_abs_delta_cct_k": stats([r["lu_spd_abs_delta_cct_k"] for r in rows]),
@@ -786,6 +801,19 @@ def main() -> None:
     (args.out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     if errors:
         (args.out_dir / "errors.json").write_text(json.dumps(errors, indent=2) + "\n", encoding="utf-8")
+
+    if len(rows) >= 80:
+        from scripts.summarize_ring_eval_by_wb_cell import summarize_rows as wb_summarize
+
+        wb_out = ROOT / "data" / "ring_light" / "eval_n84_by_wb_cell.json"
+        wb_payload = wb_summarize(rows, ["frozen_5500", "hybrid_deploy", "hybrid_multi_lab"])
+        wb_payload["source_csv"] = str(csv_path.resolve())
+        wb_payload["source_note"] = (
+            "Forehead ROI, pre-AWB tier3 affine, hybrid_deploy + multi-lab (evaluate_ringlight_torch_illuminant)"
+        )
+        wb_out.parent.mkdir(parents=True, exist_ok=True)
+        wb_out.write_text(json.dumps(wb_payload, indent=2) + "\n", encoding="utf-8")
+        print(f"Wrote {wb_out}")
 
     print(json.dumps(summary["overall"], indent=2))
     print(f"\nWrote {csv_path} ({len(rows)} rows, {len(errors)} errors)")

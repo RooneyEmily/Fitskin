@@ -186,3 +186,22 @@ def apple_face_skin_roi_mask(
     if roi_key == "cheek":
         return apple_face_cheek_masks(landmarks, dst_h, dst_w)[1]
     raise ValueError(f"unknown roi={roi!r} (expected cheek or forehead)")
+
+
+def apple_face_forehead_lab_pool_mask(
+    landmarks: dict,
+    dst_h: int,
+    dst_w: int,
+    *,
+    linear_rgb: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Forehead ∪ cheek mask for specular_tone Lab pooling on forehead ROI.
+
+    Forehead pixels alone often span a narrow Lab L* range after CAT; union with
+    the cheek band restores shadow/specular variation used by the legacy cheek path.
+    """
+    forehead = apple_face_skin_roi_mask(
+        landmarks, dst_h, dst_w, roi="forehead", linear_rgb=linear_rgb
+    )
+    _, cheek = apple_face_cheek_masks(landmarks, dst_h, dst_w)
+    return (forehead | (cheek > 0)).astype(bool)

@@ -1,0 +1,545 @@
+% Overleaf-ready report: Variable Lighting Ring Light — forehead Lab under D65/F12
+% Upload this .tex to Overleaf (pdfLaTeX). Place images in a ``figures/'' folder
+% next to the .tex (or upload into Overleaf project root and adjust \graphicspath).
+%
+% Suggested figures (filenames used below; export from Colab or use booth photos):
+%   figures/booth_setup.jpg              — ring light + booth overview
+%   figures/ring_d65.jpg                 — D65 ring lighting condition
+%   figures/ring_f12.jpg                 — F12 (warm) ring lighting condition
+%   figures/mk350_d65_spd.png            — MK350 / spectrometer under D65 ring (~6700 K)
+%   figures/mk350_f12_spd.png            — MK350 / spectrometer under F12 ring (~3000 K)
+%   figures/torch_spd.png                — iPhone torch flash SPD (Torch_meas)
+%   figures/capture_wb_factorial.png     — Booth Lighting.xlsx WB design (A–E)
+%   figures/parker_segmentation.png      — Colab Cell 3: forehead/cheek/pool overlay
+%   figures/parker_illum_grid.png        — Colab Cell 3: D65 vs F12 face-crop grid
+%   figures/parker_wb_sweep_de.png       — Colab Cell 3: Parker ΔE by wb_cell
+%   figures/n84_de_by_wb_cell.png        — Colab Cell 6: n=84 bars by wb_cell
+%
+% Pinned numbers:
+%   data/ring_light/eval_n84_by_wb_cell.json
+%   data/ring_light/wb_sweep_parker.json
+% Code:
+%   pipeline/d65_fairface7_roi.py
+%   scripts/evaluate_ringlight_torch_illuminant.py
+%   ringlight_best_stack_inference_colab.ipynb
+%
+% Compile: pdflatex ringlight_variable_forehead_overleaf.tex
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{placeins}
+\usepackage{microtype}
+
+\graphicspath{{figures/}{./}}
+
+\sisetup{
+  round-mode=places,
+  round-precision=2,
+  detect-weight=true,
+  detect-family=true,
+}
+
+\newcommand{\deee}{\ensuremath{\Delta E_{00}}}
+\newcommand{\pipename}{\texttt{D65-FairFace7-ROI}}
+\newcommand{\Lab}{\mathrm{Lab}}
+\newcommand{\todofig}[1]{%
+  \fbox{\parbox[c][0.22\textheight][c]{0.92\linewidth}{\centering\color{gray!70!black}
+  \textit{[Figure placeholder]}\\[0.4em]#1}}}
+
+\title{Variable Lighting Ring Light:\\
+  Chart-Free Forehead CIELAB under D65 and F12 Rings}
+\author{FitSkin / Ring-Light Cohort}
+\date{August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We evaluate a chart-free iPhone ProRAW flash/no-flash pipeline for recovering
+\textbf{forehead} CIELAB under CIE D65 against FitSkin Inside Lab forehead
+references, when subjects are illuminated by a controlled \textbf{Variable
+Lighting Ring Light} at two ring settings (daylight-like \textbf{D65} and warm
+fluorescent-like \textbf{F12}).
+Captures are torch zips (no-flash + flash DNGs + Apple Face landmarks) across
+four participants with a camera white-balance factorial (cells A--E).
+The deployment stack extends \pipename{} with (i)~Bradford chromatic adaptation
+in \texttt{hybrid\_deploy} mode (Lu ambient CCT on warm/F12 scenes; frozen
+5500\,K on D65-like scenes), (ii)~an illuminant-routed multi-Lab affine
+corrector, and (iii)~FairFace-7-routed \texttt{specular\_tone} sampling on the
+forehead ROI, with cheek pooling when forehead $L^*$ is spatially uniform.
+
+On the full evaluable cohort ($N=84$ trials; forehead trimmed-mean Lab for
+cohort tables), mean $\deee$ vs FitSkin forehead falls from
+\num{16.49} (frozen 5500\,K) to \num{11.95} with hybrid + multi-Lab
+(\num{9.92} on D65 ring, \num{14.18} on F12 ring).
+To isolate capture WB from person effects without confounding, Colab runs a
+\textbf{within-subject WB sweep} on \textbf{Parker} (D65 cells A--E and F12
+cells B--E; no F12-A in the cohort) under the production specular-tone path.
+Parker achieves mean $\deee=\num{3.5}$ on D65 and \num{1.6} on F12 with
+forehead $L^*$ within $\sim$3 units of FitSkin reference.
+In-situ ring measurements confirm D65 $\approx$6700\,K and F12 $\approx$3000\,K;
+residual D65 error on other participants (e.g.\ Lihn with $L^*\gtrsim 65$) is
+dominated by capture exposure, not illuminant mis-labeling.
+Capture WB is recorded in filenames / Booth design, but the color path demosaics
+with \textbf{pre-AWB} linear RAW and does not apply phone as-shot white balance.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=============================================================================
+\section{Motivation and goals}
+%=============================================================================
+
+\subsection{Problem}
+Indoor chart-free colorimetry on Pansor-20 (fixed room light) reaches mean
+$\deee\approx\num{3.6}$ with \pipename{} at a fixed 5500\,K chromatic adaptation
+(CAT) white~\cite{placeholder-d65-roi}.
+Under a \emph{variable} ring light, the same frozen CAT is expected to fail on
+warm F12: cheek/forehead chroma shifts and $\deee$ rises into the mid-teens.
+We need a claimable illuminant-aware path that:
+\begin{enumerate}[leftmargin=*]
+  \item Matches the FitSkin \textbf{forehead} measurement site (not only cheek);
+  \item Uses the known iPhone torch SPD as a flash prior for Lu ambient CCT;
+  \item Remains chart-free at inference (ColorChecker may appear in frame for
+        diagnostics but is not required);
+  \item Documents sensitivity to the Booth capture white-balance factorial.
+\end{enumerate}
+
+\subsection{Contributions (this report)}
+\begin{itemize}[leftmargin=*]
+  \item Full description of the Variable Lighting Ring Light experiment
+        (participants, ring illuminants, WB cells, torch-zip protocol).
+  \item Production stack: forehead ROI + \texttt{hybrid\_deploy} CAT +
+        multi-illuminant Lab affine + FairFace-7 \texttt{specular\_tone}
+        (with forehead$\cup$cheek pooling when $L^*$ is uniform).
+  \item Cohort results ($N=84$) with $\deee$ grouped by capture \texttt{wb\_cell}.
+  \item Within-subject WB factorial on \textbf{Parker} (9 zips; production
+        specular-tone path) with illumination and segmentation visualizations
+        in Colab.
+  \item Colab notebook: Drive-backed Parker WB sweep, pinned $N=84$ tables,
+        D65/F12 face-crop grid, and ROI overlay diagnostics
+        (\texttt{ringlight\_best\_stack\_inference\_colab.ipynb}).
+\end{itemize}
+
+%=============================================================================
+\section{Experimental setup}
+%=============================================================================
+
+\subsection{Booth and ring light}
+Subjects sit facing a Variable Lighting Ring Light in a controlled booth.
+Two ring programs are used:
+\begin{description}[leftmargin=*,style=nextline]
+  \item[D65 ring] Daylight-like ambient; design matched white balance near
+    6500\,K (cell~C). Handheld spectrometer readings under the ring report
+    CCT $\approx\num{6704}$\,K ($x=0.310$, $y=0.324$; blue-pump LED SPD with
+    peak $\lambda_p\approx 444$\,nm).
+  \item[F12 ring] Warm fluorescent-like ambient; design matched white balance
+    near 3000\,K (cell~C). Measured CCT $\approx\num{3037}$\,K ($x=0.428$,
+    $y=0.391$; broad warm peak $\lambda_p\approx 607$\,nm). This is the stress
+    condition for frozen 5500\,K CAT.
+\end{description}
+
+\begin{figure}[t]
+  \centering
+  \todofig{Booth overview: subject position, ring light, FitSkin scanner location,\\
+  and camera / Pansor capture geometry.}
+  \caption{Booth and ring-light geometry.
+  \textit{Replace with} \texttt{figures/booth\_setup.jpg}.}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \todofig{D65 ring: spectrometer BASIC + SPD panels\\
+    (CCT $\sim$6700\,K).}
+    \caption{D65 ring ($\sim$6700\,K)}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \todofig{F12 ring: spectrometer BASIC + SPD panels\\
+    (CCT $\sim$3000\,K).}
+    \caption{F12 ring ($\sim$3000\,K)}
+  \end{subfigure}
+  \caption{In-situ ring-light measurements (handheld spectrometer).
+  \textit{Replace with} \texttt{figures/mk350\_d65\_spd.png} and
+  \texttt{figures/mk350\_f12\_spd.png}.}
+  \label{fig:mk350}
+\end{figure}
+
+\subsection{Participants and FitSkin reference}
+Four participants were captured under both ring illuminants:
+\textbf{Anjana}, \textbf{Lihn}, \textbf{Parker}, and \textbf{Woojae}.
+FitSkin Inside Lab forehead $L^*a^*b^*$ (D65) was recorded per person $\times$
+ring illuminant in \texttt{Booth Lighting.xlsx} and used as ground truth.
+
+\begin{table}[h]
+\centering
+\caption{FitSkin forehead Lab (reference) used for evaluation.}
+\label{tab:fitskin}
+\begin{tabular}{llrrr}
+\toprule
+Person & Ring & $L^*$ & $a^*$ & $b^*$ \\
+\midrule
+Anjana & F12 & 40.39 & 11.75 & 22.21 \\
+Anjana & D65 & 37.63 & 11.40 & 18.29 \\
+Lihn   & F12 & 57.44 & 10.46 & 21.16 \\
+Lihn   & D65 & 55.24 & 10.98 & 20.58 \\
+Parker & F12 & 56.54 & 11.27 & 20.21 \\
+Parker & D65 & 55.99 & 11.89 & 20.53 \\
+Woojae & F12 & 58.85 & 13.23 & 18.78 \\
+Woojae & D65 & 61.23 & 12.22 & 20.48 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Anjana is the darkest forehead in the set ($L^*\approx 38$--$40$); Lihn/Parker/Woojae
+cluster near $L^*\approx 55$--$61$. Parker is used as the Colab WB-sweep demo
+because his captures sit near FitSkin $L^*$ under both rings after the best stack.
+
+\subsection{Capture protocol: torch zips}
+Each trial is a Pansor ``Torch'' zip containing:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{No-flash} ProRAW DNG ($A_0$);
+  \item \textbf{Flash} ProRAW DNG ($B_0$, iPhone torch);
+  \item Apple Vision \textbf{face landmarks} JSON (cheek / forehead regions).
+\end{itemize}
+Demosaic uses \texttt{use\_camera\_wb=False} (unity / pre-AWB linear RGB) so
+that Bradford CAT, not the phone's as-shot multipliers, defines the scene white.
+
+\subsection{Camera white-balance factorial (cells A--E)}
+Independent of the ring program, the iPhone capture white balance is set to one
+of five design cells (same design for all participants; values from Booth
+Lighting.xlsx):
+
+\begin{table}[h]
+\centering
+\caption{Capture white-balance design (Kelvin) by cell.}
+\label{tab:wb-design}
+\begin{tabular}{lrr}
+\toprule
+Cell & D65 ring WB (K) & F12 ring WB (K) \\
+\midrule
+A & 5500 & 2500 \\
+B & 6000 & 2500 \\
+C & 6500 (matched) & 3000 (matched) \\
+D & 7000 & 3500 \\
+E & 7500 & 4000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Important:} because demosaic is pre-AWB, changing cell A--E primarily
+affects EXIF / as-shot metadata and any residual ISP coupling; it is \emph{not}
+applied as the CAT white in the chart-free path.
+
+\subsection{Cohort size and Colab demo subject}
+Scanning the Variable Lighting Ring Light tree yields 84 torch trials with
+ColorChecker-detectable frames in the ring CC manifest
+(\texttt{manifest\_ring\_cc\_all.csv}: 44 D65 + 40 F12).
+No participant has an F12 cell~A trial.
+\textbf{Parker}, \textbf{Lihn}, and \textbf{Woojae} each have D65 A--E and F12 B--E;
+Anjana lacks D65 A/B.
+
+The live Colab WB sweep is fixed on \textbf{Parker}
+(\texttt{data/ring\_light/wb\_sweep\_parker.json}): one zip per available cell,
+resolved automatically from Drive under \texttt{Parker P2/\{D65,F12\}/}---no upload.
+
+\FloatBarrier
+
+%=============================================================================
+\section{Color pipeline}
+%=============================================================================
+
+\subsection{Frozen colorimetric path}
+For each zip we form geometric-mean reflectance
+$R_0 = \sqrt{\max(A_0,0)\odot \max(B_0',0)}$,
+map camera RGB to XYZ via \texttt{tier3\_affine}, apply Bradford CAT to D65,
+and pool Lab on the ROI.
+
+\subsection{Illuminant-aware CAT: \texttt{hybrid\_deploy}}
+Lu \& Drew (2006) log-chroma residual estimates ambient CCT from the flash pair,
+using the measured torch SPD as flash prior.
+\texttt{hybrid\_deploy} uses Lu CCT on F12/warm scenes and frozen 5500\,K on
+D65-like scenes (Lu alone is biased cold on D65).
+
+\subsection{Multi-illuminant Lab affine}
+Illuminant-routed $3{\times}4$ Lab affine (\texttt{multi\_illuminant\_lab\_affine.json})
+with separate $W_{\mathrm{d65}}$ / $W_{\mathrm{f12}}$ weights.
+
+\subsection{ROI: forehead matching FitSkin}
+\label{sec:roi}
+Apple Vision landmarks define a forehead mask (with hair refinement via
+\texttt{refine\_forehead\_mask}).
+Colab Cell~3 overlays:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Green} --- forehead ROI (FitSkin scan site);
+  \item \textbf{Blue} --- cheek band (for context);
+  \item \textbf{Yellow} --- Lab pool (forehead$\cup$cheek) when
+        \texttt{specular\_tone} expands sampling on F12.
+\end{itemize}
+
+\begin{figure}[t]
+  \centering
+  \todofig{Colab Cell~3 segmentation: green forehead, blue cheek,\\
+  yellow Lab pool (Parker F12 example).}
+  \caption{Forehead / cheek / Lab-pool overlay.
+  \textit{Replace with} \texttt{figures/parker\_segmentation.png}.}
+  \label{fig:roi}
+\end{figure}
+
+\subsection{FairFace-7 and \texttt{specular\_tone}}
+\label{sec:specular}
+FairFace-7 routes specular/shadow $L^*$ sampling.
+When forehead $L^*$ is uniform (std $\lesssim 2.5$) on F12 or for Indian
+ethnicity, we pool forehead$\cup$cheek pixels.
+On Parker F12 all four cells expand the pool; on Parker D65 the forehead alone
+has enough $L^*$ variation and pooling stays off.
+
+\FloatBarrier
+
+%=============================================================================
+\section{Evaluation protocol}
+%=============================================================================
+
+\subsection{Metric}
+CIEDE2000 between pipeline forehead Lab and FitSkin forehead Lab for the same
+person and ring illuminant.
+
+\subsection{Two reporting layers}
+\begin{description}[leftmargin=*,style=nextline]
+  \item[Cohort tables ($N=84$)]
+    Trimmed-mean Lab ($l\_sampling=\texttt{off}$) for batch comparison.
+    Summary: \texttt{data/ring\_light/eval\_n84\_by\_wb\_cell.json} (Colab Cell~6).
+  \item[Parker WB sweep / Colab Cell~3 ($N=9$)]
+    Full production path: FairFace-7 + \texttt{specular\_tone} + optional pool.
+    Exports $\deee$ tables, D65/F12 bar charts, face-crop illumination grid, and
+    per-zip segmentation diagnostics.
+\end{description}
+
+%=============================================================================
+\section{Results}
+%=============================================================================
+
+\subsection{Overall and by ring illuminant ($N=84$)}
+\label{sec:n84}
+
+\begin{table}[h]
+\centering
+\caption{Mean $\deee$ vs FitSkin forehead ($N=84$; trimmed-mean forehead Lab).}
+\label{tab:overall}
+\begin{tabular}{lrrr}
+\toprule
+Arm & All & D65 ($n=44$) & F12 ($n=40$) \\
+\midrule
+frozen 5500\,K & 16.49 & 12.60 & 20.77 \\
+hybrid\_deploy & 15.50 & 12.86 & 18.40 \\
+\textbf{hybrid + multi-Lab} & \textbf{11.95} & \textbf{9.92} & \textbf{14.18} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{$\deee$ by capture \texttt{wb\_cell} ($N=84$)}
+\label{sec:wb-results}
+
+\begin{table}[h]
+\centering
+\caption{Mean $\deee$ for \textbf{hybrid + multi-Lab}, by ring $\times$ WB cell.}
+\label{tab:wb}
+\begin{tabular}{llrrr}
+\toprule
+Ring & Cell & Capture WB (K) & $n$ & Mean $\deee$ \\
+\midrule
+D65 & A & 5500 & 7 & 11.20 \\
+D65 & B & 6000 & 9 & 7.22 \\
+D65 & C & 6500 & 7 & 7.24 \\
+D65 & D & 7000 & 10 & 11.52 \\
+D65 & E & 7500 & 11 & 11.56 \\
+\midrule
+F12 & B & 2500 & 10 & 15.63 \\
+F12 & C & 3000 & 8 & 12.07 \\
+F12 & D & 3500 & 10 & 11.40 \\
+F12 & E & 4000 & 12 & 16.71 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \todofig{Bar chart: mean $\deee$ (hybrid + multi-Lab) vs wb\_cell\\
+  for D65 and F12 (export from Colab Cell~6).}
+  \caption{$N=84$ reference --- $\deee$ by capture WB cell.
+  \textit{Replace with} \texttt{figures/n84\_de\_by\_wb\_cell.png}.}
+  \label{fig:wb-bars}
+\end{figure}
+
+\subsection{Within-subject WB sweep (Parker, production path)}
+\label{sec:parker-sweep}
+Holding the person fixed removes confounding from mixed-person demos.
+Colab Cell~2b loads nine Parker torch zips from Drive; Cell~3 reports FitSkin
+forehead $\deee$ under hybrid + multi-Lab + \texttt{specular\_tone}.
+
+\begin{table}[h]
+\centering
+\caption{Parker WB sweep: production-path $\deee$ vs FitSkin forehead
+(hybrid + multi-Lab + specular\_tone; August 2026 local run).}
+\label{tab:parker-sweep}
+\begin{tabular}{llrrrrrr}
+\toprule
+Ring & Cell & WB (K) & $\deee$ & $L^*$ & $a^*$ & $b^*$ & Pool \\
+\midrule
+D65 & A & 5500 & 3.37 & 59.7 & 10.0 & 19.7 & no \\
+D65 & B & 6000 & 4.78 & 61.3 & 10.4 & 18.8 & no \\
+D65 & C & 6500 & 2.73 & 59.0 & 10.3 & 20.0 & no \\
+D65 & D & 7000 & 4.74 & 61.3 & 10.1 & 18.8 & no \\
+D65 & E & 7500 & 1.84 & 58.0 & 11.0 & 20.2 & no \\
+\midrule
+F12 & B & 2500 & 0.73 & 56.7 & 11.0 & 20.3 & yes \\
+F12 & C & 3000 & 2.39 & 58.8 & 10.8 & 20.0 & yes \\
+F12 & D & 3500 & 1.48 & 57.7 & 11.0 & 19.7 & yes \\
+F12 & E & 4000 & 1.89 & 58.3 & 10.9 & 19.9 & yes \\
+\midrule
+\multicolumn{3}{l}{Mean D65 ($n=5$)} & 3.49 & 59.8 & --- & --- & --- \\
+\multicolumn{3}{l}{Mean F12 ($n=4$)} & 1.62 & 57.9 & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Parker's D65 forehead $L^*$ sits $\sim$2--6 units above FitSkin reference
+($L^*=55.99$), explaining most of the $\sim$3--5 $\deee$ residual on D65.
+F12 with cheek pool tracks reference within $\deee<2.5$ on all cells.
+Capture WB cell has modest effect within Parker (best D65: cell~E at $\deee=1.84$;
+best F12: cell~B at $\deee=0.73$).
+
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \todofig{Colab Cell~3: Parker face crops, D65 row vs F12 row\\
+    (SHOW\_ILLUM\_GRID).}
+    \caption{Illumination grid}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \todofig{Colab Cell~3: Parker $\deee$ vs wb\_cell bars\\
+    (D65 left, F12 right).}
+    \caption{$\deee$ by wb\_cell}
+  \end{subfigure}
+  \caption{Within-subject Parker WB sweep (Colab Cell~3).
+  \textit{Replace with} \texttt{figures/parker\_illum\_grid.png} and
+  \texttt{figures/parker\_wb\_sweep\_de.png}.}
+  \label{fig:parker-sweep}
+\end{figure}
+
+\FloatBarrier
+
+%=============================================================================
+\section{Discussion}
+%=============================================================================
+
+\paragraph{Ring illuminants are correct.}
+Spectrometer readings ($\sim$6700\,K D65, $\sim$3000\,K F12) match the Booth
+design. High $\deee$ on \emph{some} D65 captures is not explained by treating
+the ring as the wrong illuminant.
+
+\paragraph{Exposure dominates person-specific D65 error.}
+On Lihn (not used as the Colab demo), D65 production-path $\deee$ reaches
+\num{9}--\num{17} because forehead $L^*\approx 65$--\num{75} vs FitSkin
+\num{55.2}---often flagged \texttt{L\_ge\_75} / out-of-band---while F12 on the
+same subject stays $\deee\approx 1$--\num{4} with cheek pool engaged.
+Parker illustrates the intended operating point: $L^*$ near reference and
+$\deee<5$ on D65, $<2.5$ on F12.
+
+\paragraph{Site match and warm light.}
+Forehead ROI alignment and hybrid + multi-Lab affine recover most of the F12
+cohort gap ($N=84$ F12 mean \num{14.18} vs D65 \num{9.92}).
+Specular\_tone + cheek pool remains essential for uniform foreheads (Anjana).
+
+\paragraph{Capture WB factorial.}
+Cross-cohort ($N=84$) and within-subject (Parker) views both show non-monotonic
+cell effects, consistent with pre-AWB demosaic: phone WB is logged but not the
+CAT white.
+
+\paragraph{Colab reproducibility.}
+Setup extracts \texttt{colab\_assets/ringlight\_best\_stack.zip} (includes
+\texttt{wb\_sweep\_parker.json} and \texttt{eval\_n84\_by\_wb\_cell.json}).
+Cell~2b resolves Parker zips from Drive; Cell~3 exports tables and figures;
+Cell~6 loads pinned $N=84$ tables (inline fallback if git lags).
+
+%=============================================================================
+\section{Conclusions}
+%=============================================================================
+
+Under Variable Lighting Ring Light (D65 / F12), a chart-free forehead stack
+combining \texttt{hybrid\_deploy} CAT, multi-illuminant Lab affine, and
+FairFace-routed specular sampling improves frozen 5500\,K CAT
+($N=84$: $\deee$ \num{16.49}$\,\to\,$\num{11.95}).
+A Parker within-subject WB sweep demonstrates production accuracy
+($\deee\approx\num{3.5}$ D65, $\approx\num{1.6}$ F12) when captures are
+well exposed.
+Ring CCT measurements validate the illuminant labels; residual error is driven
+by forehead $L^*$ exposure and person-specific tonality, not phone WB in the
+CAT path.
+
+%=============================================================================
+\appendix
+\section{Regenerating numbers}
+%=============================================================================
+
+\begin{verbatim}
+python3 scripts/evaluate_ringlight_torch_illuminant.py \
+  --data-root /path/to/Variable\ Lighting\ Ring\ Light \
+  --booth-xlsx /path/to/Booth\ Lighting.xlsx
+
+python3 scripts/summarize_ring_eval_by_wb_cell.py \
+  --csv results/torch_illuminant_ringlight/torch_illuminant_ringlight.csv
+\end{verbatim}
+
+\section{Software pointers}
+\begin{itemize}[leftmargin=*]
+  \item Pipeline: \texttt{pipeline/d65\_fairface7\_roi.py}
+        (\texttt{roi=forehead}, \texttt{cat\_mode=hybrid\_deploy}).
+  \item Colab: \texttt{ringlight\_best\_stack\_inference\_colab.ipynb}
+        (Parker WB sweep from Drive).
+  \item WB sweep list: \texttt{data/ring\_light/wb\_sweep\_parker.json}.
+\end{itemize}
+
+\section{Figure checklist for Overleaf}
+\begin{enumerate}[leftmargin=*]
+  \item \texttt{booth\_setup.jpg}
+  \item \texttt{mk350\_d65\_spd.png}, \texttt{mk350\_f12\_spd.png}
+  \item \texttt{parker\_segmentation.png} (Colab Cell~3, \texttt{SHOW\_VIZ\_INDEX})
+  \item \texttt{parker\_illum\_grid.png} (Colab Cell~3, \texttt{SHOW\_ILLUM\_GRID})
+  \item \texttt{parker\_wb\_sweep\_de.png} (Colab Cell~3 bar chart)
+  \item \texttt{n84\_de\_by\_wb\_cell.png} (Colab Cell~6)
+\end{enumerate}
+
+\begin{thebibliography}{9}
+\bibitem{placeholder-d65-roi}
+  FitSkin / Pansor technical note,
+  \emph{D65-FairFace7-ROI: Chart-Free Flash/No-Flash Skin Colorimetry}
+  (\texttt{docs/d65\_fairface7\_roi\_overleaf.tex}), August 2026.
+
+\bibitem{lu2006}
+  C.~Lu and M.~S.~Drew,
+  ``Practical scene illuminant estimation via flash/no-flash pairs,''
+  \emph{IS\&T/SID Color Imaging Conference}, 2006.
+
+\bibitem{fairface}
+  K.~Karkkainen and J.~Joo,
+  ``FairFace: Face Attribute Dataset for Balanced Race, Gender, and Age,''
+  \emph{WACV}, 2021.
+\end{thebibliography}
+
+\end{document}

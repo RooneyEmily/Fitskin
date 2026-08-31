@@ -1,0 +1,37 @@
+{
+  "default_person": "Parker",
+  "people": {
+    "Woojae": {
+      "manifest": "data/ring_light/wb_sweep_woojae.json",
+      "n": 9,
+      "cells": {
+        "D65": "ABCDE",
+        "F12": "BCDE"
+      }
+    },
+    "Lihn": {
+      "manifest": "data/ring_light/wb_sweep_lihn.json",
+      "n": 9,
+      "cells": {
+        "D65": "ABCDE",
+        "F12": "BCDE"
+      }
+    },
+    "Parker": {
+      "manifest": "data/ring_light/wb_sweep_parker.json",
+      "n": 9,
+      "cells": {
+        "D65": "ABCDE",
+        "F12": "BCDE"
+      }
+    },
+    "Anjana": {
+      "manifest": "data/ring_light/wb_sweep_anjana.json",
+      "n": 7,
+      "cells": {
+        "D65": "CDE",
+        "F12": "BCDE"
+      }
+    }
+  }
+}

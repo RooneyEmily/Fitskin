@@ -1,0 +1,131 @@
+{
+  "description": "Parker \u00d7 all available capture WB cells (F12-A absent in cohort for everyone).",
+  "person": "Parker",
+  "note": "Compare \u0394E across wb_cell within each illuminant. Pipeline uses pre-AWB demosaic.",
+  "capture_wb_k": {
+    "D65": {
+      "A": 5500,
+      "B": 6000,
+      "C": 6500,
+      "D": 7000,
+      "E": 7500
+    },
+    "F12": {
+      "A": 2500,
+      "B": 2500,
+      "C": 3000,
+      "D": 3500,
+      "E": 4000
+    }
+  },
+  "demos": [
+    {
+      "file": "Parker-D65-A1Torch.zip",
+      "person": "Parker",
+      "illuminant": "D65",
+      "wb_cell": "A",
+      "capture_wb_k": 5500,
+      "fitskin_forehead": {
+        "L": 55.99,
+        "a": 11.89,
+        "b": 20.53
+      }
+    },
+    {
+      "file": "Parker-D65-B1Torch.zip",
+      "person": "Parker",
+      "illuminant": "D65",
+      "wb_cell": "B",
+      "capture_wb_k": 6000,
+      "fitskin_forehead": {
+        "L": 55.99,
+        "a": 11.89,
+        "b": 20.53
+      }
+    },
+    {
+      "file": "Parker-D65-C1Torch.zip",
+      "person": "Parker",
+      "illuminant": "D65",
+      "wb_cell": "C",
+      "capture_wb_k": 6500,
+      "fitskin_forehead": {
+        "L": 55.99,
+        "a": 11.89,
+        "b": 20.53
+      }
+    },
+    {
+      "file": "Parker-D65-D1Torch.zip",
+      "person": "Parker",
+      "illuminant": "D65",
+      "wb_cell": "D",
+      "capture_wb_k": 7000,
+      "fitskin_forehead": {
+        "L": 55.99,
+        "a": 11.89,
+        "b": 20.53
+      }
+    },
+    {
+      "file": "Parker-D65-E1Torch.zip",
+      "person": "Parker",
+      "illuminant": "D65",
+      "wb_cell": "E",
+      "capture_wb_k": 7500,
+      "fitskin_forehead": {
+        "L": 55.99,
+        "a": 11.89,
+        "b": 20.53
+      }
+    },
+    {
+      "file": "Parker-F12-B4Torch.zip",
+      "person": "Parker",
+      "illuminant": "F12",
+      "wb_cell": "B",
+      "capture_wb_k": 2500,
+      "fitskin_forehead": {
+        "L": 56.54,
+        "a": 11.27,
+        "b": 20.21
+      }
+    },
+    {
+      "file": "Parker-F12-C1Torch.zip",
+      "person": "Parker",
+      "illuminant": "F12",
+      "wb_cell": "C",
+      "capture_wb_k": 3000,
+      "fitskin_forehead": {
+        "L": 56.54,
+        "a": 11.27,
+        "b": 20.21
+      }
+    },
+    {
+      "file": "Parker-F12-D1Torch.zip",
+      "person": "Parker",
+      "illuminant": "F12",
+      "wb_cell": "D",
+      "capture_wb_k": 3500,
+      "fitskin_forehead": {
+        "L": 56.54,
+        "a": 11.27,
+        "b": 20.21
+      }
+    },
+    {
+      "file": "Parker-F12-E1Torch.zip",
+      "person": "Parker",
+      "illuminant": "F12",
+      "wb_cell": "E",
+      "capture_wb_k": 4000,
+      "fitskin_forehead": {
+        "L": 56.54,
+        "a": 11.27,
+        "b": 20.21
+      }
+    }
+  ]
+}

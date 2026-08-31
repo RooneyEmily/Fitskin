@@ -1,0 +1,289 @@
+{
+  "n_trials": 84,
+  "arms": [
+    "frozen_5500",
+    "hybrid_deploy",
+    "hybrid_multi_lab"
+  ],
+  "capture_wb_k": {
+    "D65": {
+      "A": 5500,
+      "B": 6000,
+      "C": 6500,
+      "D": 7000,
+      "E": 7500
+    },
+    "F12": {
+      "A": 2500,
+      "B": 2500,
+      "C": 3000,
+      "D": 3500,
+      "E": 4000
+    }
+  },
+  "overall": {
+    "frozen_5500": {
+      "n": 84,
+      "mean": 16.49,
+      "median": 18.0993
+    },
+    "hybrid_deploy": {
+      "n": 84,
+      "mean": 15.4979,
+      "median": 15.3681
+    },
+    "hybrid_multi_lab": {
+      "n": 84,
+      "mean": 11.9512,
+      "median": 8.2112
+    }
+  },
+  "by_wb_cell": {
+    "A": {
+      "frozen_5500": {
+        "n": 7,
+        "mean": 13.6845,
+        "median": 9.5432
+      },
+      "hybrid_deploy": {
+        "n": 7,
+        "mean": 15.1011,
+        "median": 14.9972
+      },
+      "hybrid_multi_lab": {
+        "n": 7,
+        "mean": 11.2031,
+        "median": 5.5213
+      }
+    },
+    "B": {
+      "frozen_5500": {
+        "n": 19,
+        "mean": 16.3499,
+        "median": 18.5838
+      },
+      "hybrid_deploy": {
+        "n": 19,
+        "mean": 15.0719,
+        "median": 14.9664
+      },
+      "hybrid_multi_lab": {
+        "n": 19,
+        "mean": 11.6459,
+        "median": 7.9201
+      }
+    },
+    "C": {
+      "frozen_5500": {
+        "n": 15,
+        "mean": 15.7455,
+        "median": 17.8744
+      },
+      "hybrid_deploy": {
+        "n": 15,
+        "mean": 14.4533,
+        "median": 15.2588
+      },
+      "hybrid_multi_lab": {
+        "n": 15,
+        "mean": 9.8142,
+        "median": 7.9783
+      }
+    },
+    "D": {
+      "frozen_5500": {
+        "n": 20,
+        "mean": 16.744,
+        "median": 18.0993
+      },
+      "hybrid_deploy": {
+        "n": 20,
+        "mean": 15.5134,
+        "median": 15.0913
+      },
+      "hybrid_multi_lab": {
+        "n": 20,
+        "mean": 11.4626,
+        "median": 8.1166
+      }
+    },
+    "E": {
+      "frozen_5500": {
+        "n": 23,
+        "mean": 17.7241,
+        "median": 18.9857
+      },
+      "hybrid_deploy": {
+        "n": 23,
+        "mean": 16.6384,
+        "median": 17.4443
+      },
+      "hybrid_multi_lab": {
+        "n": 23,
+        "mean": 14.2499,
+        "median": 17.1817
+      }
+    }
+  },
+  "by_illuminant_wb_cell": {
+    "D65": {
+      "A": {
+        "frozen_5500": {
+          "n": 7,
+          "mean": 13.6845,
+          "median": 9.5432
+        },
+        "hybrid_deploy": {
+          "n": 7,
+          "mean": 15.1011,
+          "median": 14.9972
+        },
+        "hybrid_multi_lab": {
+          "n": 7,
+          "mean": 11.2031,
+          "median": 5.5213
+        }
+      },
+      "B": {
+        "frozen_5500": {
+          "n": 9,
+          "mean": 10.5864,
+          "median": 9.2578
+        },
+        "hybrid_deploy": {
+          "n": 9,
+          "mean": 10.7605,
+          "median": 9.2578
+        },
+        "hybrid_multi_lab": {
+          "n": 9,
+          "mean": 7.2228,
+          "median": 3.9821
+        }
+      },
+      "C": {
+        "frozen_5500": {
+          "n": 7,
+          "mean": 10.6849,
+          "median": 7.9344
+        },
+        "hybrid_deploy": {
+          "n": 7,
+          "mean": 10.6849,
+          "median": 7.9344
+        },
+        "hybrid_multi_lab": {
+          "n": 7,
+          "mean": 7.2389,
+          "median": 2.5117
+        }
+      },
+      "D": {
+        "frozen_5500": {
+          "n": 10,
+          "mean": 13.8798,
+          "median": 9.1482
+        },
+        "hybrid_deploy": {
+          "n": 10,
+          "mean": 13.8798,
+          "median": 9.1482
+        },
+        "hybrid_multi_lab": {
+          "n": 10,
+          "mean": 11.5226,
+          "median": 5.1258
+        }
+      },
+      "E": {
+        "frozen_5500": {
+          "n": 11,
+          "mean": 13.6066,
+          "median": 10.4018
+        },
+        "hybrid_deploy": {
+          "n": 11,
+          "mean": 13.6066,
+          "median": 10.4018
+        },
+        "hybrid_multi_lab": {
+          "n": 11,
+          "mean": 11.5636,
+          "median": 6.3295
+        }
+      }
+    },
+    "F12": {
+      "B": {
+        "frozen_5500": {
+          "n": 10,
+          "mean": 21.5371,
+          "median": 21.9509
+        },
+        "hybrid_deploy": {
+          "n": 10,
+          "mean": 18.9521,
+          "median": 19.4952
+        },
+        "hybrid_multi_lab": {
+          "n": 10,
+          "mean": 15.6267,
+          "median": 17.1721
+        }
+      },
+      "C": {
+        "frozen_5500": {
+          "n": 8,
+          "mean": 20.1735,
+          "median": 19.6533
+        },
+        "hybrid_deploy": {
+          "n": 8,
+          "mean": 17.7506,
+          "median": 17.0461
+        },
+        "hybrid_multi_lab": {
+          "n": 8,
+          "mean": 12.0675,
+          "median": 8.2455
+        }
+      },
+      "D": {
+        "frozen_5500": {
+          "n": 10,
+          "mean": 19.6081,
+          "median": 18.7441
+        },
+        "hybrid_deploy": {
+          "n": 10,
+          "mean": 17.147,
+          "median": 16.1013
+        },
+        "hybrid_multi_lab": {
+          "n": 10,
+          "mean": 11.4025,
+          "median": 9.235
+        }
+      },
+      "E": {
+        "frozen_5500": {
+          "n": 12,
+          "mean": 21.4985,
+          "median": 21.319
+        },
+        "hybrid_deploy": {
+          "n": 12,
+          "mean": 19.4175,
+          "median": 19.1955
+        },
+        "hybrid_multi_lab": {
+          "n": 12,
+          "mean": 16.7123,
+          "median": 17.1841
+        }
+      }
+    }
+  },
+  "source_csv": "/home/mabl-main/color_space_research/new/Fitskin/results/torch_illuminant_ringlight/torch_illuminant_ringlight.csv",
+  "source_note": "n=84 manifest_ring_cc_all; forehead ROI; trimmed-mean Lab (l_sampling=off); tier3 affine + hybrid_deploy + multi-lab; vs FitSkin forehead reference."
+}
