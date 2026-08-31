@@ -48,14 +48,21 @@ if IN_COLAB:
         print("Drive OK:", md)
         top = sorted(md.glob("Variable Lighting*"))[:8]
         if top:
-            print("Top-level lighting folders:")
+            print("Top-level lighting folders (My Drive):")
             for h in top:
                 print(" ", h)
         else:
             print(
-                "NOTE: no top-level 'Variable Lighting*' folder — "
-                "Cell 2b will search under MyDrive."
+                "NOTE: no 'Variable Lighting*' folder in My Drive root.\n"
+                "  If the booth data is under **Shared with me**, Colab only sees it after you\n"
+                "  **Add shortcut to Drive** (Drive web → right-click folder → Add shortcut → My Drive).\n"
+                "  Or put flat zip folders in My Drive and set EXTRA_ZIP_DIRS in Cell 2b."
             )
+        sd = Path("/content/drive/Shareddrives")
+        if sd.is_dir() and any(sd.iterdir()):
+            print("Shared drives mounted:", sd)
+            for h in sorted(sd.glob("Variable Lighting*"))[:4]:
+                print(" ", h)
     else:
         print("WARN: Drive not mounted — authorize when prompted, then re-run this cell.")
 
@@ -182,4 +189,36 @@ print("tier3 affine:", (CAL_DIR / "camera_rgb_to_xyz_affine.npy").is_file())
 print("multi-lab corrector:", MULTI_LAB.is_file())
 print("n=84 eval JSON:", (REPO / "data" / "ring_light" / "eval_n84_by_wb_cell.json").is_file())
 print("forehead pool mask: OK")
+
+# ── Torch flash SPD (used by hybrid_deploy Lu estimate) ───────────────────────
+import matplotlib.pyplot as plt
+import numpy as np
+from pipeline.illuminant_estimation import load_torch_prior, load_torch_prior_from_cal_bundle
+
+_torch_measured = False
+try:
+    _tp = load_torch_prior(TORCH_DIR)
+    _torch_measured = True
+    _torch_label = f"MK350 measured — {TORCH_DIR}"
+except FileNotFoundError:
+    _tp = load_torch_prior_from_cal_bundle(CAL_DIR)
+    _torch_label = f"Calibration bundle fallback — {CAL_DIR.name}/iphone_calibration_bundle.json"
+
+print(f"\nTorch flash prior: {_torch_label}")
+print(f"  CCT ≈ {_tp.torch_cct_k:.0f} K  |  files={_tp.files}")
+
+_spd = np.asarray(_tp.mean_spd, dtype=float)
+_spd = _spd / max(float(np.nanmax(_spd)), 1e-8)
+_fig, _ax = plt.subplots(figsize=(9, 3.2))
+_ax.plot(_tp.wavelengths_nm, _spd, color="#d84a2b", lw=2.5)
+_ax.set_xlabel("Wavelength (nm)")
+_ax.set_ylabel("Normalized SPD")
+_title = "iPhone torch SPD — used in Lu / hybrid_deploy CAT"
+if not _torch_measured:
+    _title += "\n(upload Torch_meas/ on Drive for measured ESPD; bundle fallback shown)"
+_ax.set_title(_title, fontsize=10)
+_ax.grid(alpha=0.25)
+plt.tight_layout()
+plt.show()
+
 print("Setup OK.")

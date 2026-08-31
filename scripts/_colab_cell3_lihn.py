@@ -50,7 +50,13 @@ pipe = D65FairFace7ROIPipeline.from_defaults(
     sampling=SAMPLING,
     roi=ROI,
 )
-print(f"Pipeline: roi={ROI}  cat_mode={CAT_MODE}  multi_lab={MULTI_LAB.name}  sampling={SAMPLING}\n")
+print(f"Pipeline: roi={ROI}  cat_mode={CAT_MODE}  multi_lab={MULTI_LAB.name}  sampling={SAMPLING}")
+if pipe.torch_prior is not None:
+    tp = pipe.torch_prior
+    _ts = "MK350 measured" if tp.n_files else "calibration bundle (Cell 1 plot)"
+    print(f"Torch SPD in use: {_ts}  CCT≈{tp.torch_cct_k:.0f} K  files={tp.files}\n")
+else:
+    print()
 
 cohort_results = {}
 summary_rows = []

@@ -46,7 +46,7 @@ Production-style **chart-free** forehead Lab from Variable Lighting **torch zips
 
 1. **Runtime → GPU** optional
 2. **Cell 1** — clone repo, extract assets, mount Drive
-3. **Cell 2b** — auto-load **Parker** × all capture WB cells (D65 A–E, F12 B–E) from Drive — **no upload**
+3. **Cell 2b** — Parker WB sweep from **`data/ring_light/demo_zips/`** in git (no Drive) — or Drive fallback
 4. **Cell 3** — run pipeline + compare FitSkin ΔE by `wb_cell` (illumination grid + segmentation viz)
 5. **Cell 4** — optional frozen vs best-stack on one zip
 6. **Cell 6** — pinned n=84 cohort tables (optional; no re-run)
