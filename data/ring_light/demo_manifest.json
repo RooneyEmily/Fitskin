@@ -1,0 +1,26 @@
+{
+  "description": "Demo torch zips for Colab (Anjana + Lihn, D65 + F12). ~20 MB each.",
+  "repo_subdir": "data/ring_light/demo_zips",
+  "demos": [
+    {
+      "file": "AnjanaF12B1Torch.zip",
+      "person": "Anjana",
+      "illuminant": "F12"
+    },
+    {
+      "file": "Anjana-D65-C3Torch.zip",
+      "person": "Anjana",
+      "illuminant": "D65"
+    },
+    {
+      "file": "Lihn-F12-B1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "F12"
+    },
+    {
+      "file": "LihnD65-C1Torch.zip",
+      "person": "Lihn",
+      "illuminant": "D65"
+    }
+  ]
+}
