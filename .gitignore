@@ -28,6 +28,9 @@ calibration/fairface/*.pt
 /data/pansor/manifest_pansor_fitskin.csv
 /data/pansor/pansor_fitskin_scan_search.json
 
+# Ring-light CC cache (large DNG extracts; rebuild with scripts/build_ring_light_cc_manifest.py)
+/data/ring_light_cc_cache/
+
 # Local pipeline outputs
 /pipeline4_output/
 /chart_cc_output/

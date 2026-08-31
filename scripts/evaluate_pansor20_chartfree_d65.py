@@ -249,7 +249,7 @@ def mean_lab_on_mask(
     ``l_sampling``:
       - ``off``: trimmed mean (frozen colorimetric path).
       - ``specular_tone``: heuristic ROI policy using demographics ethnicity
-        (cohort-tuned; not a validated colorimetric model).
+        (not a validated colorimetric model).
       - ``tone_chroma``: same ROI rules with ethnicity predicted from FitSkin-free
         cheek tone/chroma features (demographics-trained classifier).
     """
@@ -274,7 +274,8 @@ def mean_lab_on_mask(
 
     meta: Dict[str, Any] = {}
     if l_sampling == "specular_tone":
-        out, meta = apply_specular_tone_sampling(lab, ethnicity, trim=trim)
+        out, sm = apply_specular_tone_sampling(lab, ethnicity, trim=trim)
+        meta.update(sm)
     elif l_sampling == "tone_chroma":
         # Ethnicity-free at inference: tone/chroma classifier → specular_tone rules.
         if tone_classifier is None:
@@ -304,14 +305,16 @@ def mean_lab_on_mask(
 
 
 # Specular/shadow-aware cheek sampling — HEURISTIC ROI POLICY (not a colorimetric
-# model). Thresholds were tuned on this Pansor cohort. Prefer freezing preawb_cat
-# +5500K as the claimable color path; validate ROI via LOSO / tone_chroma.
-# Black: mean L* inflated by flash speculars → L_p10.
-# White: when mean cheek L* is already dark (<58), L_p70 (skip if already bright).
-# Indian: split by pipeline a* — low-a* cheeks are shadow/desaturated (drop darkest
-# 20% + high-chroma a*b*); high-a* cheeks are slightly too light → L_p35.
-# Asian/Iranian (medium): low-a* → shadow/hiC; low mean chroma (C*<24) → L_p70;
-# high-C cheeks left as trimmed mean.
+# model). Kept rules are coarse, FairFace-routed, and physically motivated
+# (specular L* inflation on dark skin; shadow/chroma splits on medium tones).
+# Person-specific threshold patches (Latino→Indian, White a*-reject / L_p85,
+# shadow_bright L-gate, Black b*-gated hiC) were removed as cohort overfit.
+# Claimable colorimetry remains preawb_cat+5500K trimmed mean; this ROI layer is
+# an optional deployment prior. Validate via LOSO / tone_chroma.
+# Black: flash speculars inflate mean L* → L_p10.
+# White: dark cheeks (base L*<58) → L_p70; else trimmed mean.
+# Indian: low-a* → drop darkest 20% + high-chroma a*b*; high-a* → L_p35.
+# Asian/Iranian: low-a* → shadow/hiC; low mean chroma (C*<24) → L_p70; else mean.
 L_SAMPLING_BLACK_P = 10.0
 L_SAMPLING_WHITE_P = 70.0
 L_SAMPLING_WHITE_MAX_BASE_L = 58.0
@@ -359,14 +362,18 @@ def apply_specular_tone_sampling(
         meta["l_percentile"] = p
         return out, meta
 
-    if eth == "white" and float(base[0]) < L_SAMPLING_WHITE_MAX_BASE_L:
-        p = L_SAMPLING_WHITE_P
-        out = np.array(
-            [float(np.percentile(lab[:, 0], p)), float(base[1]), float(base[2])],
-            dtype=np.float64,
-        )
-        meta["l_percentile"] = p
-        return out, meta
+    if eth == "white":
+        if float(base[0]) < L_SAMPLING_WHITE_MAX_BASE_L:
+            p = L_SAMPLING_WHITE_P
+            out = np.array(
+                [float(np.percentile(lab[:, 0], p)), float(base[1]), float(base[2])],
+                dtype=np.float64,
+            )
+            meta["l_percentile"] = p
+            meta["white_branch"] = "dark_Lp"
+            return out, meta
+        meta["white_branch"] = "base"
+        return base, meta
 
     if eth == "indian":
         if float(base[1]) < L_SAMPLING_INDIAN_A_MAX:
@@ -766,11 +773,14 @@ def process_one(
         "indian_branch": sample_meta.get("indian_branch"),
         "asian_branch": sample_meta.get("asian_branch"),
         "iranian_branch": sample_meta.get("iranian_branch"),
+        "white_branch": sample_meta.get("white_branch"),
         "predicted_ethnicity": sample_meta.get("predicted_ethnicity")
         or fairface_meta.get("predicted_ethnicity"),
     }
     out.update(scr_meta)
     out.update(fairface_meta)
+    if sample_meta.get("predicted_ethnicity"):
+        out["predicted_ethnicity"] = sample_meta["predicted_ethnicity"]
     return out
 
 
@@ -1111,6 +1121,7 @@ def main() -> None:
                     "indian_branch": pred.get("indian_branch"),
                     "asian_branch": pred.get("asian_branch"),
                     "iranian_branch": pred.get("iranian_branch"),
+                    "white_branch": pred.get("white_branch"),
                     "predicted_ethnicity": pred.get("predicted_ethnicity"),
                     "fairface_label": pred.get("fairface_label"),
                     "fairface_confidence": pred.get("fairface_confidence"),
