@@ -1,0 +1,32 @@
+{
+  "issa_mode": "full",
+  "issa_weight": 3.0,
+  "n_samples": 21,
+  "n_mcc": 12,
+  "n_issa": 9,
+  "subjects": [
+    "ISSA_issa_median_african",
+    "ISSA_issa_median_caucasian",
+    "ISSA_issa_median_chinese",
+    "ISSA_issa_median_east_asian",
+    "ISSA_issa_median_european",
+    "ISSA_issa_median_japanese",
+    "ISSA_issa_median_middle_eastern",
+    "ISSA_issa_median_south_asian",
+    "ISSA_issa_median_thai",
+    "P1_CC_T1",
+    "P1_CC_T2",
+    "P1_CC_T3",
+    "P2_CC_T1",
+    "P2_CC_T2",
+    "P2_CC_T3"
+  ],
+  "train_patch_metrics": {
+    "affine_mean_de00": 8.043148139071251,
+    "affine_median_de00": 8.428772066005005,
+    "projector_mean_de00": 6.564721776507331,
+    "projector_median_de00": 7.601636674333601
+  },
+  "cal_dir": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine",
+  "goal": "pansor_show"
+}

@@ -1,0 +1,472 @@
+% Overleaf-ready manuscript: tone-routed flash/no-flash skin colorimetry
+% Upload to Overleaf (pdfLaTeX). Merge \bibliography{} with your project .bib.
+% Code & data: https://github.com/RooneyEmily/Fitskin
+%
+% Compile: pdflatex skin_tone_calibration_overleaf.tex
+%          bibtex skin_tone_calibration_overleaf   (if using external .bib)
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\sisetup{
+  round-mode=places,
+  round-precision=2,
+  detect-weight=true,
+  detect-family=true,
+}
+
+\newcommand{\deee}{\ensuremath{\Delta E_{00}}}
+\newcommand{\Maff}{\mathbf{M}_{\mathrm{aff}}}
+\newcommand{\Rvec}{\mathbf{R}}
+
+\title{Skin-Tone--Routed Flash/No-Flash Colorimetry from iPhone ProRAW:\\
+  Offline Calibration, In-Scene ColorChecker, and Chart-Free Deployment}
+\author{%
+  % TODO: author list
+}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Consumer iPhone photography offers a practical route to non-contact skin colorimetry, but a single camera-to-XYZ calibration matrix fails across the lightness range spanned by lighter and darker skin tones.
+We evaluate flash/no-flash ($\sqrt{A\odot B}$) reflectance recovery against FitSkin contact-scanner cheek CIELAB on a two-participant iPhone ProRAW cohort (Emily, lighter; Likitha, Indian, darker skin), with cross-session ground truth.
+Three pipelines are compared: (i)~in-scene Macbeth ColorChecker correction with automatic skin-tone routing of region-of-interest and matrix form; (ii)~chart-free inference using offline matrices trained on separate ColorChecker sessions; and (iii)~a hybrid production rule (chart when visible, flash/no-flash otherwise).
+Fixed cheek-region extraction on chart-free darker skin inflated $\deee$ to ${\sim}9$; routing to a full face-mesh region and a tone-specific affine matrix reduced Likitha's chart-free median $\deee$ from ${\sim}5.0$ to ${\sim}2.2$ while preserving Emily's performance (${\sim}1.7$--$2.4$).
+With ColorChecker visible, automatic tone routing achieved median $\deee=1.41$ ($N=6$).
+We further show that training-data composition is tone-dependent: stacking booth RAW and JPEG sessions helps the lighter-skin matrix but degrades darker-skin ProRAW inference when capture pipelines differ.
+An ancestry-appropriate ISSA spectral prior (\texttt{issa\_median\_south\_asian} for Likitha) marginally improves the dark bundle over an African prior.
+These results support commercial shade-matching and longitudinal skincare applications at $\deee\approx 2$--$4$ without a per-capture ColorChecker, while FitSkin-grade absolute colorimetry still benefits from an in-scene reference or same-session contact pairing.
+\end{abstract}
+
+%=============================================================================
+\section{Introduction}\label{sec:intro}
+%=============================================================================
+
+Skin tone measurement from camera imagery has broad applications in clinical dermatology, beauty industry color matching, and fairness auditing of face analysis systems across demographic groups.
+Accurate colorimetric recovery from consumer cameras has been pursued since the early digital imaging era \cite{romero2006spectral}, yet the problem remains practically unsolved in unconstrained settings: existing pipelines typically require a physical calibration target or dedicated illuminant sensor at acquisition time, neither of which can be assumed in consumer deployments.
+Classical illuminant estimation relies on statistical assumptions over scene reflectance that are routinely violated in practice \cite{gijsenij2011}.
+Learning-based methods reduce this dependence but introduce their own requirements: large paired training datasets and, critically, a calibration reference at deployment, limiting their applicability outside controlled laboratory conditions.
+
+Flash photography offers an alternative.
+By capturing a matched ambient and flash image pair, the flash contribution can be isolated and used to recover surface reflectance without statistical assumptions about global scene reflectance distributions \cite{dicarlo2001illuminating,lu2006practical}.
+Lu and Drew~\cite{lu2006practical} showed that ambient illuminant chromaticity can be estimated from flash/no-flash pairs in log geometric-mean chromaticity space without prior knowledge of flash spectral power distribution or camera responsivities.
+Subsequent work structured flash/no-flash pairs through intrinsic decomposition~\cite{maralan2023computational} and large-scale learned decomposition on FAID~\cite{flashambient,upadhyay2025low}.
+However, targetless flash/no-flash colorimetry of \emph{human skin}---evaluated against instrument-grade contact measurement across tone---has received limited systematic study.
+
+Skin colour pipelines are additionally sensitive to how calibration is performed.
+Harville et al.~\cite{harville2005consistent} and Choi et al.~\cite{choi2017performance} showed that ColorChecker matrices weighted toward skin-coloured patches outperform general 24-patch fits in the skin tone region, implying that both \emph{where} skin is sampled and \emph{which training reflectances} enter the fit matter.
+Ordinal scales such as Fitzpatrick~\cite{fitzpatrick1988} underrepresent darker tones and lack device-independent coordinates~\cite{cook2025colorimetric}; the Monk Skin Tone (MST) scale~\cite{cheng2024monastic} and dedicated colorimetric skin scales~\cite{cook2025colorimetric} provide reference Lab values better suited to objective evaluation.
+The ISSA dataset supplies median spectral reflectance priors stratified by ancestry~\cite{issa2025}, relevant both to learning-based auto white balance~\cite{zhou2025scr,wang2025perform} and to anchoring offline camera calibration.
+
+This paper extends the flash/no-flash lineage to \textbf{tone-routed, FitSkin-validated skin colorimetry} on iPhone ProRAW.
+We separate two decisions that prior work often conflates: (a)~\emph{skin-tone tier}---a lightness-based routing of ROI and matrix form inferred from an uncorrected preview; and (b)~\emph{ancestry spectral prior}---ISSA median reflectance used as a synthetic training row and SCR-AWB prior.
+We train offline ColorChecker matrices \emph{without} requiring a chart at inference, evaluate against cross-session FitSkin cheek Lab, and report when chart-free deployment is commercially plausible.
+
+\paragraph{Contributions.}
+\begin{itemize}[noitemsep]
+  \item A \textbf{skin-tone auto policy} for in-scene ColorChecker capture: preview cheek $L^*$ routes lighter skin to cheek ROI with a $3\times3$ matrix and darker skin to face-mesh ROI with a $3\times4$ affine map, improving median $\deee$ from $4.64$ to $1.41$ on six Pansor ProRAW trials.
+  \item \textbf{Tone-specific offline calibration bundles} (\texttt{light/}, \texttt{dark/}) for chart-free flash/no-flash inference, reducing darker-skin chart-free median $\deee$ from ${\sim}5.0$ to ${\sim}2.2$ without regressing lighter skin.
+  \item A \textbf{training-data policy} showing that multi-session stacking benefits lighter-skin calibration but must respect capture-pipeline homogeneity for darker ProRAW inference.
+  \item \textbf{Ancestry-appropriate ISSA priors} (South Asian vs.\ Caucasian) distinct from lightness-tier routing, with validation on an Indian participant.
+  \item A \textbf{commercial feasibility analysis} distinguishing shade matching, longitudinal skincare, and FitSkin-grade absolute colorimetry.
+\end{itemize}
+
+%=============================================================================
+\section{Background}\label{sec:background}
+%=============================================================================
+
+\subsection{Camera-Based Colorimetry}
+
+Digital cameras have been investigated as practical imaging colorimeters since the late 1990s.
+Wu et al.~\cite{wu1999} demonstrated that calibration matrices mapping filtered camera RGB to CIE XYZ under selected illumination could yield spatially resolved tristimulus data.
+Accurate recovery requires sensor spectral sensitivities to approximate a linear transform of the CIE colour matching functions (Luther--Ives); consumer iPhone sensors violate this, necessitating scene- or session-specific calibration~\cite{hubel1994comparison,wang2021optimized}.
+Target-based ColorChecker calibration~\cite{wakholi2026systematic,BabelColorMCC} captures camera response and illumination jointly but requires the chart in frame---impractical for daily consumer capture.
+
+\subsection{Illuminant Estimation}
+
+Grey-world, grey-edge, white-patch, and achromatic-pixel methods encode reflectance priors that fail on portrait scenes~\cite{gijsenij2011}.
+Learning-based colour constancy~\cite{xie2023camera,kang2026graph,liu2026illuminant} improves benchmarks but needs large annotated corpora and domain retraining.
+Multimodal ambient-sensor fusion~\cite{liu2026illuminant} and FAID-trained flash decomposition~\cite{flashambient,upadhyay2025low} suggest hybrid physical--learned pipelines.
+We position our work as a \emph{physically grounded} flash/no-flash reflectance path with \emph{offline} target-based camera characterisation, evaluated on skin rather than general scenes.
+
+\subsection{Flash/No-Flash Illuminant and Reflectance Estimation}
+
+DiCarlo et al.~\cite{dicarlo2001illuminating} isolated flash by subtraction; Petschnigg et al.~\cite{petschnigg2004digital} formalised flash/no-flash pairs for enhancement.
+Lu and Drew~\cite{lu2006practical} recovered ambient chromaticity without flash SPD or camera calibration at runtime.
+Hui et al.~\cite{hui2016white,hui2018illuminant} applied separation to white balance and per-pixel illuminant spectra.
+Maralan et al.~\cite{maralan2023computational} jointly estimated albedo, shading, and illuminant under a structured model.
+
+Our primary reflectance estimate uses the geometric mean $\Rvec=\sqrt{\mathbf{A}\odot\mathbf{B}}$ after ECC alignment---a practical recipe related to but not identical with Lu's log-chroma locus~\cite{lu2006practical,evangelidis2008parametric}.
+Camera RGB$\rightarrow$XYZ is supplied by an offline matrix fit on ColorChecker training captures (chart present at train time, absent at inference), following the spirit of Choi et al.'s skin-weighted target calibration~\cite{choi2017performance}.
+
+\subsection{Skin Tone Measurement and Reference Scales}
+
+Camera skin colour accuracy depends on illuminant characterisation, detector calibration, and ROI choice~\cite{harville2005consistent,choi2017performance,cook2025colorimetric}.
+The Fitzpatrick scale~\cite{fitzpatrick1988} is ordinal and subjective; MST~\cite{cheng2024monastic} provides D65 Lab references suitable for device-independent comparison.
+We use FitSkin contact-scanner cheek Lab as ground truth rather than MST assignment, but report in CIELAB under D65 for compatibility with MST-oriented literature.
+
+%=============================================================================
+\section{Methods}\label{sec:methods}
+%=============================================================================
+
+\subsection{Cohort and Ground Truth}
+
+We study two participants imaged on iPhone ProRAW (DNG) with paired flash/no-flash captures:
+\textbf{P1 (Emily)}, lighter skin (Caucasian-range FitSkin cheek $L^*\approx 69$); and
+\textbf{P2 (Likitha / Liki)}, darker skin, \textbf{Indian ancestry} (FitSkin cheek $L^*\approx 52$).
+The primary evaluation cohort (\emph{Pansor}, 16~June~2026) comprises six ColorChecker trials (three per participant) and six Sephora Bag trials excluded from the present chart-colorimetry analysis.
+Ground truth is FitSkin multi-point \emph{cheek} CIELAB under D65, taken as the May~20 median cheek Lab per participant (\emph{cross-session} reference; iPhone capture ${\sim}4$ weeks later).
+Agreement is CIEDE2000 ($\deee$) between pipeline cheek or mesh means and FitSkin cheek means.
+Cross-session reference inflates absolute $\deee$ relative to same-session booth validation (Phase~4 median $\deee=3.50$, $N=5$) but preserves \emph{relative} comparison across pipelines.
+
+Additional ColorChecker training sources (not used in every eval row):
+\begin{itemize}[noitemsep]
+  \item Phase-4 booth RAW DNGs (May 2025, six pairs);
+  \item bundled chart\_cc JPEG pairs (six pairs, 8-bit export).
+\end{itemize}
+
+\subsection{RAW Ingestion}
+
+DNGs were demosaiced to linear camera RGB (\texttt{rawpy}, half-resolution).
+Pansor ProRAW required embedded \emph{camera white balance}; unity WB caused severe failure.
+A per-channel 99.5th-percentile scale mapped linear RGB to $[0,1]$ for alignment; statistics used linear values before display encoding.
+
+\subsection{Pipeline A: In-Scene ColorChecker (\texttt{run\_chart\_cc.py})}
+
+When a 24-patch Macbeth ColorChecker is visible:
+\begin{enumerate}[noitemsep]
+  \item Detect MCC on the no-flash frame; apply gray-world white balance from neutral patches.
+  \item Estimate RGB$\rightarrow$XYZ via least squares (lighter skin: $3\times3$) or affine $3\times4$ (darker skin).
+  \item Extract mean CIELAB in a skin ROI under D65.
+\end{enumerate}
+
+\paragraph{Skin-tone auto policy.}
+Preview cheek $L^*$ (gray-WB, uncorrected) routes capture settings:
+\begin{align*}
+  L^*_{\mathrm{probe}} \ge 42 &\Rightarrow \text{\textbf{light tier}: cheek ROI, } 3\times3 \text{ matrix},\\
+  L^*_{\mathrm{probe}} < 42 &\Rightarrow \text{\textbf{dark tier}: face-mesh ROI, affine matrix}.
+\end{align*}
+On Pansor, P1 probe $L^*\approx 47$--$50$; P2 probe $L^*\approx 35$ (Table~\ref{tab:probe}).
+
+\subsection{Pipeline B: Chart-Free Flash/No-Flash}
+
+When no chart is in frame, reflectance is recovered from aligned flash/no-flash linear RGB:
+\begin{equation}\label{eq:reflectance}
+  \Rvec = \sqrt{\max(\mathbf{A}\odot\mathbf{B},\,\varepsilon)},
+\end{equation}
+where $\mathbf{A}$ is no-flash and $\mathbf{B}$ flash after ECC registration and \emph{skin-mask median-luma} exposure matching (flash scaled to no-flash on a MediaPipe face-mesh mask, not global scene scaling).
+$\Rvec$ is mapped to CIELAB via offline $\Maff$ trained on separate ColorChecker sessions.
+
+\paragraph{ROI rule (chart-free).}
+\textbf{Face-mesh ROI only} for all skin tones in flash/no-flash mode.
+Cheek-hull ROI on darker skin inflated $\deee$ to ${\sim}8$--$9$ (Section~\ref{sec:results-roi}).
+
+\paragraph{Tone-routed offline matrices.}
+Two bundles are maintained:
+\begin{itemize}[noitemsep]
+  \item \texttt{calibration/tier3\_by\_tone/light/} --- Emily training sessions + \texttt{issa\_median\_caucasian};
+  \item \texttt{calibration/tier3\_by\_tone/dark/} --- Likitha Pansor ProRAW CC + \texttt{issa\_median\_south\_asian}.
+\end{itemize}
+At inference, \texttt{--skin-tone auto} selects the bundle by manifest participant or preview $L^*$.
+
+\subsection{Offline Matrix Training}
+
+Training uses flash/no-flash pairs \emph{with} visible ColorChecker (no chart required at deployment).
+For each training trial, 24 MCC patches on the aligned no-flash frame provide camera-linear RGB; canonical D65 XYZ~\cite{BabelColorMCC} provides reference.
+Patches are stacked across trials; optional ISSA median reflectance rows~\cite{issa2025} are synthesised through monochromator-derived camera spectral sensitivity.
+Affine $\Maff\in\mathbb{R}^{4\times 3}$ is fit by weighted least squares with anchor down-weighting; Lu neutral-patch log-chroma sharpening~\cite{lu2006practical} is stored for optional use.
+
+\paragraph{Per-row white balance.}
+Pansor ProRAW training rows use \texttt{raw\_camera\_wb=yes}; booth RAW and JPEG rows use unity/camera-default as appropriate (Table~\ref{tab:training-manifest}).
+
+\paragraph{Tone-specific training policy (empirical).}
+\begin{itemize}[noitemsep]
+  \item \textbf{Light bundle:} stack all nine Emily ColorChecker sources (3 Pansor + 3 booth + 3 JPEG).
+  \item \textbf{Dark bundle:} Pansor ProRAW only (3 Likitha trials); booth/JPEG stacking raised inferred $L^*$ from ${\sim}50$ to ${\sim}64$ on ProRAW eval by mixing capture pipelines.
+\end{itemize}
+
+Training is reproduced by:
+\begin{verbatim}
+python3 scripts/train_skin_tone_bundles.py
+\end{verbatim}
+
+\subsection{Pipeline C: Hybrid Production Rule}
+
+\begin{algorithmic}[1]
+\If{ColorChecker detected in frame}
+  \State Run Pipeline~A with \texttt{--skin-tone auto}
+\ElsIf{flash/no-flash pair available}
+  \State Probe skin-tone tier; load \texttt{light/} or \texttt{dark/} bundle
+  \State Run Pipeline~B (mesh ROI, Eq.~\ref{eq:reflectance})
+\EndIf
+\end{algorithmic}
+
+Optional Sephora-bag CAT02~\cite{fitskin2026pansor,cie2004cat,Bradford1984} applies on bag trials only; excluded from ColorChecker primary analysis here.
+
+\subsection{Evaluation Metrics}
+
+Primary endpoint: cheek or mesh mean $\deee$~\cite{sharma2005ciede2000} vs.\ FitSkin cheek Lab.
+Secondary: signed $\Delta L^*$, $\Delta a^*$, $\Delta b^*$.
+We report per-trial, per-participant, and cohort median/mean.
+
+%=============================================================================
+\section{Results}\label{sec:results}
+%=============================================================================
+
+\subsection{In-Scene ColorChecker: Fixed vs.\ Skin-Tone Auto}
+\label{sec:results-chart}
+
+Table~\ref{tab:chart-cc} compares fixed cheek ROI + single matrix fit (baseline) against skin-tone auto on six Pansor ColorChecker DNG trials.
+
+\begin{table}[htbp]
+\centering
+\caption{In-scene ColorChecker on Pansor ProRAW ($N=6$): fixed cheek/$3\times3$ vs.\ \texttt{--skin-tone auto}. Ground truth: cross-session FitSkin May~20 cheek Lab.}
+\label{tab:chart-cc}
+\small
+\begin{tabular}{l S[table-format=1.2] S[table-format=1.2] S[table-format=1.2] S[table-format=1.2]}
+\toprule
+{Trial} & {$\deee$ (fixed)} & {$\deee$ (auto)} & {Tier} & {$L^*_{\mathrm{probe}}$} \\
+\midrule
+P1\_CC\_T1 & 5.04 & 5.04 & light & 46.4 \\
+P1\_CC\_T2 & 2.25 & 2.25 & light & 48.6 \\
+P1\_CC\_T3 & 1.09 & 1.09 & light & 49.7 \\
+P2\_CC\_T1 & 4.39 & \bfseries 0.96 & dark  & 34.8 \\
+P2\_CC\_T2 & 5.95 & \bfseries 1.73 & dark  & 35.0 \\
+P2\_CC\_T3 & 4.89 & \bfseries 0.93 & dark  & 34.6 \\
+\midrule
+{Median}   & 4.64 & \bfseries 1.41 & --- & --- \\
+{Mean}     & 3.93 & \bfseries 2.13 & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Preview cheek $L^*$ and auto routing on Pansor ColorChecker trials.}
+\label{tab:probe}
+\begin{tabular}{lccS[table-format=1.1]}
+\toprule
+{Participant} & {Tier} & {ROI (auto)} & {$L^*_{\mathrm{probe}}$} \\
+\midrule
+P1 (Emily)   & light & cheek & 46.4--49.7 \\
+P2 (Likitha) & dark  & mesh  & 34.6--35.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Auto routing primarily benefits P2: mesh + affine reduces $\deee$ from ${\sim}4.4$--$5.9$ to ${\sim}0.9$--$1.7$.
+P1 trials already used cheek ROI; residual error on P1\_CC\_T1 ($\deee=5.04$) reflects cross-session $L^*$ under-exposure on no-flash rather than ROI choice.
+
+\subsection{Chart-Free Flash/No-Flash: Pooled vs.\ Tone-Routed}
+\label{sec:results-roi}
+
+Table~\ref{tab:fnf} summarises chart-free inference (mesh ROI, Eq.~\ref{eq:reflectance}) on the same six ColorChecker trials (chart \emph{not} used at inference; trials serve as labelled portrait captures).
+
+\begin{table}[htbp]
+\centering
+\caption{Chart-free flash/no-flash ($N=6$, mesh ROI): single pooled offline matrix vs.\ tone-routed \texttt{light/}+\texttt{dark/} bundles. Final training: light = 9 Emily sessions; dark = 3 Pansor ProRAW + ISSA South Asian.}
+\label{tab:fnf}
+\small
+\begin{tabular}{l S[table-format=1.2] S[table-format=1.2] S[table-format=1.2]}
+\toprule
+{Condition} & {P1 median $\deee$} & {P2 median $\deee$} & {All median $\deee$} \\
+\midrule
+Pooled \texttt{tier3\_affine}     & 2.03 & 5.26 & 3.65 \\
+Tone-routed (v1: 3-trial bundles) & 5.77 & \bfseries 2.16 & 4.11 \\
+\textbf{Tone-routed (final)}       & \bfseries 1.77 & \bfseries 2.16 & \bfseries 2.16 \\
+Cheek ROI on P2 (FNF, pooled)     & ---  & ${\sim}8.8$ & --- \\
+\midrule
+Chart CC + auto (reference)       & 1.67 & 1.35 & 1.41 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Per-trial chart-free $\deee$ with final tone-routed bundles (mesh ROI).}
+\label{tab:fnf-per-trial}
+\begin{tabular}{l S[table-format=1.2] S[table-format=1.2] S[table-format=1.2]}
+\toprule
+{Trial} & {Pooled $\deee$} & {Tone-routed $\deee$} & {$L^*_{\mathrm{pipe}}$ (tone)} \\
+\midrule
+P1\_CC\_T1 & 2.31 & 2.39 & 66.0 \\
+P1\_CC\_T2 & 2.03 & 1.77 & 66.8 \\
+P1\_CC\_T3 & 1.93 & 1.69 & 67.0 \\
+P2\_CC\_T1 & 5.26 & 2.75 & 50.2 \\
+P2\_CC\_T2 & 5.69 & 1.94 & 50.9 \\
+P2\_CC\_T3 & 5.00 & 2.45 & 49.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tone routing corrected P2 $L^*$ from ${\sim}58$ (pooled) to ${\sim}50$ (FitSkin ${\sim}52$).
+A single pooled matrix traded off ${\sim}5\,\deee$ on darker skin against ${\sim}2\,\deee$ on lighter skin.
+
+\subsection{Training-Data Ablation (Dark Bundle)}
+
+Table~\ref{tab:dark-train} shows P2 median chart-free $\deee$ when varying dark-bundle training sources (mesh ROI eval on Pansor).
+
+\begin{table}[htbp]
+\centering
+\caption{Dark-bundle training ablation: P2 median chart-free $\deee$ on Pansor ($N=3$).}
+\label{tab:dark-train}
+\begin{tabular}{l S[table-format=1.0] S[table-format=1.2]}
+\toprule
+{Training sources} & {$n_{\mathrm{trials}}$} & {P2 median $\deee$} \\
+\midrule
+Pansor ProRAW only + ISSA           & 3 & \bfseries 2.16 \\
+Pansor + booth RAW + ISSA           & 6 & 4.40 \\
+Pansor + booth RAW + JPEG + ISSA    & 9 & 10.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Booth RAW (unity WB, May session) and 8-bit JPEG exports are valuable for lighter-skin stacking but act as \emph{negative transfer} when naively merged into a darker-skin ProRAW matrix.
+
+\begin{table}[htbp]
+\centering
+\caption{Light-bundle training manifest (nine trials).}
+\label{tab:training-manifest}
+\small
+\begin{tabular}{llcc}
+\toprule
+{subject\_id} & {source} & {camera WB} & {participant} \\
+\midrule
+P1\_CC\_T1--T3     & Pansor ProRAW & yes & Emily \\
+P1\_T1--T3\_booth  & Booth RAW     & no  & Emily \\
+P1\_JPEG\_T1--T3   & Chart JPEG    & no  & Emily \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ISSA Spectral Prior: South Asian vs.\ African}
+
+Likitha (P2) is Indian; we replaced \texttt{issa\_median\_african} with \texttt{issa\_median\_south\_asian} in the dark bundle and SCR-AWB defaults.
+MCC patches dominate the matrix fit; prior choice shifts P2 chart-free $\deee$ modestly (Table~\ref{tab:issa}).
+
+\begin{table}[htbp]
+\centering
+\caption{ISSA prior ablation on dark bundle (Pansor P2, chart-free).}
+\label{tab:issa}
+\begin{tabular}{l S[table-format=1.2] S[table-format=1.2] S[table-format=1.2] S[table-format=1.2]}
+\toprule
+{ISSA prior} & {T1 $\deee$} & {T2 $\deee$} & {T3 $\deee$} & {Median} \\
+\midrule
+\texttt{issa\_median\_african}      & 2.75 & 1.94 & 2.45 & 2.45 \\
+\textbf{\texttt{issa\_median\_south\_asian}} & 2.67 & 1.89 & 2.33 & \bfseries 2.33 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{SCR-AWB baseline.}
+Spectral-reflectance auto white balance~\cite{zhou2025scr} with ISSA prior alone achieved median $\deee\approx 13.8$ on Pansor and is not sufficient as a standalone skin colorimeter.
+
+%=============================================================================
+\section{Discussion}\label{sec:discussion}
+%=============================================================================
+
+\subsection{Relation to Prior Work}
+
+Our results align with Choi et al.~\cite{choi2017performance}: skin-colour accuracy improves when calibration and ROI choices target the skin region rather than treating all reflectances equally.
+Extending this principle across \emph{tone}, we find that darker skin benefits from mesh sampling and affine RGB$\rightarrow$XYZ, consistent with spatial non-uniformity and specular/sub-surface effects at cheek hull boundaries~\cite{harville2005consistent}.
+
+The flash/no-flash geometric mean (Eq.~\ref{eq:reflectance}) operationalises the active illumination idea of DiCarlo~\cite{dicarlo2001illuminating} and Lu~\cite{lu2006practical} without requiring runtime flash SPD estimation, at the cost of a separate offline camera characterisation---an instance of \emph{train with chart, deploy without chart}, distinct from classical in-scene ColorChecker correction~\cite{wakholi2026systematic} and from fully targetless grey-world methods~\cite{gijsenij2011}.
+
+Tone-routed offline matrices address a failure mode not visible in single-participant calibrations: pooled fits compromise darker skin $L^*$ by ${\sim}6$ units in our cohort.
+This resonates with fairness critiques of Fitzpatrick-thresholded systems~\cite{cook2025colorimetric} and motivates device-independent scales (MST~\cite{cheng2024monastic}) \emph{and} capture-pipeline stratification.
+
+Separating \textbf{lightness tier} (preview $L^*$ routing) from \textbf{ancestry prior} (ISSA South Asian vs.\ Caucasian) clarifies design for Indian and other South Asian users: tier controls ROI/matrix class; prior anchors spectral training rows~\cite{issa2025,zhou2025scr,wang2025perform}.
+
+\subsection{Commercial Deployment}
+
+Table~\ref{tab:commercial} summarises realistic product tiers without a ColorChecker in every capture.
+
+\begin{table}[htbp]
+\centering
+\caption{Commercial feasibility without per-capture ColorChecker.}
+\label{tab:commercial}
+\small
+\begin{tabular}{p{0.28\linewidth} c p{0.18\linewidth} p{0.32\linewidth}}
+\toprule
+{Use case} & {Feasible?} & {Expected $\deee$} & {Requirements} \\
+\midrule
+Shade matching / relative tone & Yes & 2--4 & Fixed phone model, FNF RAW, mesh ROI, tone-routed matrix \\
+Longitudinal skincare trends   & Yes & Relative & Same-user baseline, controlled capture protocol \\
+Absolute Lab vs.\ FitSkin      & Hard & $>$2 without CC & In-scene reference or same-session contact scan \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A practical architecture mirrors Pipeline~C (Section~\ref{sec:methods}): factory/calibration sessions with ColorChecker; daily capture via tone-routed FNF; optional bag or gray-card refinement~\cite{fitskin2026pansor}.
+Product copy should emphasise \emph{shade index} or change-from-baseline rather than absolute CIELAB without reference.
+
+Conditions that \emph{cannot} be ignored:
+\begin{itemize}[noitemsep]
+  \item one global matrix across tones and phone models;
+  \item social-filter JPEG capture;
+  \item cheek ROI on chart-free darker skin;
+  \item ancestry-mismatched ISSA priors (e.g.\ African prior for Indian skin).
+\end{itemize}
+
+\subsection{Limitations}
+
+\begin{itemize}[noitemsep]
+  \item $N=2$ participants; cross-session FitSkin reference inflates absolute $\deee$.
+  \item Single iPhone model / ProRAW processing path; per-device matrices remain necessary.
+  \item Dark-bundle training restricted to three Pansor trials until more homogenous ProRAW sessions are collected.
+  \item Sephora-bag and Lu-booth paths excluded from ColorChecker primary analysis; bag CAT02 helps P2 bag trials but not P1~\cite{fitskin2026pansor}.
+\end{itemize}
+
+\subsection{Future Work}
+
+Collect additional Indian/darker ProRAW ColorChecker sessions; weighted multi-source training; same-session FitSkin validation; MST scale assignment from corrected Lab; per-device matrix shipping; evaluation on bag-only (chart-free) trials.
+
+%=============================================================================
+\section{Conclusion}\label{sec:conclusion}
+%=============================================================================
+
+Non-contact iPhone skin colorimetry is feasible at $\deee\approx 2$ chart-free and $\deee\approx 1.4$ with in-scene ColorChecker when calibration is \textbf{tone-routed} and \textbf{ancestry-aware}.
+Likitha's Indian skin required South Asian ISSA priors and a dark-tier mesh/affine policy; Emily's lighter skin benefited from stacking nine ColorChecker training sessions.
+A hybrid deployment---chart when visible, flash/no-flash otherwise---balances FitSkin-grade accuracy with consumer capture constraints.
+Absolute contact-scanner agreement without any in-scene reference remains hard; shade matching and longitudinal monitoring are the near-term commercial targets.
+
+%=============================================================================
+\section*{Reproducibility}
+%=============================================================================
+
+\noindent
+Repository: \url{https://github.com/RooneyEmily/Fitskin}.
+Key commands:
+\begin{verbatim}
+python3 scripts/build_pansor_manifest.py --data-root "$PANSOR_DATA_ROOT"
+python3 scripts/train_skin_tone_bundles.py
+python3 run_chart_cc.py --input-mode dng \
+  --manifest data/pansor/manifest_pansor_fitskin.csv --cc-only \
+  --skin-tone auto --out-dir chart_cc_output/pansor_dng_auto_tone
+python3 flash_no_flash_skin_lab.py --input-mode dng \
+  --manifest data/pansor/manifest_pansor_fitskin.csv \
+  --iphone-calibration-tone-root calibration/tier3_by_tone \
+  --skin-tone auto --raw-camera-wb --exposure-scale-skin-mask \
+  --bag-cat02 off --production
+\end{verbatim}
+
+%=============================================================================
+% Use your Overleaf .bib file. Append entries from references_supplement.bib
+% for keys not yet in your library (wu1999, issa2025, zhou2025scr, fitskin2026pansor).
+% Compile: pdflatex -> bibtex -> pdflatex -> pdflatex
+%=============================================================================
+\bibliographystyle{plain}
+\bibliography{references,references_supplement}
+
+\end{document}

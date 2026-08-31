@@ -1,0 +1,47 @@
+{
+  "method": "mcc24_in_frame_ring_torch_r0",
+  "manifest_summary": {
+    "data_root": "/home/mabl-main/Downloads/Variable Lighting Ring Light-20260829T185351Z-1-001/Variable Lighting Ring Light",
+    "cache_dir": "/home/mabl-main/color_space_research/new/Fitskin/data/ring_light_cc_cache",
+    "n_trials_scanned": 84,
+    "n_cc_detected": 84,
+    "n_f12": 40,
+    "n_d65": 44,
+    "by_person": {
+      "all": {
+        "Anjana": 17,
+        "Lihn": 21,
+        "Parker": 26,
+        "Woojae": 20
+      },
+      "F12": {
+        "Anjana": 13,
+        "Lihn": 9,
+        "Parker": 10,
+        "Woojae": 8
+      },
+      "D65": {
+        "Anjana": 4,
+        "Lihn": 12,
+        "Parker": 16,
+        "Woojae": 12
+      }
+    }
+  },
+  "bundles": {
+    "F12 warm ring CC R0": {
+      "out_dir": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine_warm_cc",
+      "n_training_trials": 40
+    },
+    "D65 ring CC R0": {
+      "out_dir": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine_d65_ring_cc",
+      "n_training_trials": 42
+    }
+  },
+  "paths": {
+    "default_cool": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine",
+    "warm_f12": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine_warm_cc",
+    "d65_ring": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine_d65_ring_cc"
+  },
+  "note": "MCC24 in torch frame; affine fit on R0=sqrt(nf*flash) patches."
+}

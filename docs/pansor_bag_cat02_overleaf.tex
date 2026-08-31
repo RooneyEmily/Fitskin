@@ -1,0 +1,351 @@
+% Overleaf-ready: Pipeline 4 + Sephora bag CAT02 (Pansor cohort)
+% Upload this file to Overleaf (pdfLaTeX). Optional: \input into your main manuscript.
+%
+% Pinned numbers: data/pansor/pansor_ablation_summary.json
+% Code: https://github.com/RooneyEmily/Fitskin
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+
+\sisetup{
+  round-mode=places,
+  round-precision=2,
+  detect-weight=true,
+  detect-family=true,
+}
+
+\newcommand{\deee}{\ensuremath{\Delta E_{00}}}
+
+\title{Pipeline~4 with Sephora Bag CAT02:\\
+  Methods and Results (Pansor iPhone Cohort)}
+\author{FitSkin flash/no-flash skin color}
+\date{June 2026 cohort; cross-session FitSkin reference}
+
+\begin{document}
+\maketitle
+
+%=============================================================================
+\section{Methods}
+%=============================================================================
+
+\subsection{Cohort and reference standard}
+
+We evaluated paired iPhone ProRAW (DNG) flash/no-flash captures from the \emph{Pansor} cohort (16~June~2026): two participants $\times$ two in-scene conditions (Sephora Bag, ColorChecker) $\times$ three trials ($N=12$ pairs). Ground truth was FitSkin multi-point \emph{cheek} CIELAB under D65, taken as the May~20 median cheek Lab per participant (cross-session reference; capture $\approx$4 weeks before the iPhone session). Agreement was quantified as CIEDE2000 ($\deee$) between pipeline cheek means and FitSkin cheek means. This cohort is \emph{not} same-session validation; absolute $\deee$ is expected to exceed the booth Phase~4 evaluation (median $\deee=3.50$, $N=5$, same-session mapping).
+
+\subsection{RAW ingestion and offline calibration}
+
+DNGs were demosaiced to linear camera RGB (\texttt{rawpy}, half-resolution demosaic). App-exported ProRAW required embedded camera white balance; unity white balance caused severe chroma failure on this data. A per-channel 99.5th-percentile scale mapped linear RGB to $[0,1]$ for alignment and masking; reported statistics used linear values before display encoding.
+
+Offline calibration used separate training captures with a visible 24-patch Macbeth ColorChecker. A production $3\times4$ affine map $\mathbf{M}_{\mathrm{aff}}$ from $[R,G,B,1]^\top$ to CIE~XYZ (D65) was fit by stacked least squares with anchor down-weighting. Per-participant exposure anchors (median white-patch scale from training) were applied to reflectance before XYZ$\rightarrow$Lab. Evaluation trials did \emph{not} use an in-scene chart for the primary path.
+
+\subsection{Core inference (all trials)}
+
+Let $\mathbf{A}$ denote aligned no-flash linear RGB and $\mathbf{B}$ flash linear RGB after enhanced-correlation-coefficient (ECC) registration and skin-mask median-luma exposure matching (flash scaled to match no-flash on a MediaPipe face-mesh skin mask, not global scene scaling). Per-pixel reflectance was
+\begin{equation}
+  \mathbf{R} = \sqrt{\max(\mathbf{A}\odot\mathbf{B},\,\varepsilon)}.
+\end{equation}
+This geometric mean is a practical flash/no-flash recipe and is \emph{not} the reflectance model of Lu \& Drew (2006). Reflectance was scaled by the participant exposure anchor, converted to CIELAB (D65) via $\mathbf{M}_{\mathrm{aff}}$, and averaged inside a cheek region of interest: intersection of the mesh skin mask and a convex cheek hull, with symmetric 5\% trimmed means on $L^*$, $a^*$, $b^*$ and minimum skin chroma $C_{ab}^*\ge 2$.
+
+\subsection{In-scene Sephora bag chromatic adaptation (\texttt{cat02\_bag})}
+
+On Sephora Bag trials only, we estimated a chromatic-adaptation correction from the in-scene bag before forming $\mathbf{R}$. The white horizontal stripe of a handheld Sephora bag was localized in flash-aligned linear RGB by horizontal stripe-energy scan, refined by two-hand MediaPipe bounding boxes when both hands were visible; optional MobileSAM tightened paper segmentation. Mean linear RGB of the white stripe (centre third of the stripe band) was mapped to XYZ via $\mathbf{M}_{\mathrm{aff}}$.
+
+A CIECAM02 CAT02 transform mapped scene white to Nix Spectro~2 (M2) D65 white/black measurements of the physical bag (\texttt{calibration/sephora\_bag\_nix\_reference.json}). The adaptation was conjugated into camera RGB,
+\begin{equation}
+  \mathbf{P} = \mathbf{M}^{-1}\,\mathbf{T}_{\mathrm{CAT02}}\,\mathbf{M},
+\end{equation}
+where $\mathbf{M}$ is the $3\times3$ linear part of $\mathbf{M}_{\mathrm{aff}}$. When $\mathbf{P}$ was valid, it was applied to \emph{both} no-flash and flash linear RGB; flash was re-warped with the original ECC matrix; skin-mask flash exposure matching was repeated; then $\mathbf{R}$ was computed as above.
+
+\textbf{Trial gating (production).} Bag CAT02 was attempted only when the manifest indicated Sephora Bag (\texttt{condition\_code=BAG}). ColorChecker trials received no in-scene chromatic correction (in-scene CC-based modes increased error on this dark-room cohort). Unknown trial types required hand landmarks in the segmentation path to reject stripe-only false positives on chart whites.
+
+\subsection{Excluded from primary analysis}
+
+Lu \& Drew ambient white-balance paths, SCR-AWB, booth RGB pre-white-balance before reflectance, and FitSkin $L^*$ lightness calibration were not applied on the Pansor primary analysis (cross-session reference already differs in $L^*$). In-scene ColorChecker chromatic correction at inference was rejected by ablation.
+
+%=============================================================================
+\section{Results}
+%=============================================================================
+
+\subsection{Overview}
+
+We report cheek CIEDE2000 ($\deee$) between Pipeline~4 output and cross-session FitSkin reference (May~20 median cheek Lab per participant, D65). The locked production rule applies \texttt{cat02\_bag} on six Sephora Bag trials and \texttt{none} (reflectance only) on six ColorChecker trials. Primary endpoint on bag trials is mean/median $\deee$ under \texttt{cat02\_bag} versus \texttt{none}. Absolute $\deee$ is not directly comparable to the same-session booth Phase~4 cohort (median $\deee=3.50$, $N=5$); Pansor results should be interpreted as \emph{relative} improvement from in-scene bag chromatic adaptation.
+
+%-----------------------------------------------------------------------------
+\subsection{Sephora Bag trials: \texttt{cat02\_bag} vs.\ reflectance alone}
+%-----------------------------------------------------------------------------
+
+Table~\ref{tab:pansor_bag_summary} summarizes cheek $\deee$ on six Sephora Bag trials. In-scene bag CAT02 reduced mean $\deee$ from 6.50 to \textbf{5.02} (SD 1.47) and median $\deee$ from 6.52 to \textbf{4.61} versus chart-free reflectance alone. Per-trial outcomes are in Table~\ref{tab:pansor_bag_per_trial}; per-participant stratification in Table~\ref{tab:pansor_bag_by_participant}; correction hit rate in Table~\ref{tab:pansor_hit_rate}.
+
+\begin{table}[htbp]
+\centering
+\caption{Pansor Sephora Bag trials ($n=6$): cheek $\deee$ vs.\ cross-session FitSkin (May~20 median).}
+\label{tab:pansor_bag_summary}
+\begin{tabular}{l S[table-format=1.0] S[table-format=1.2] S[table-format=1.2] S[table-format=1.2]}
+\toprule
+{Mode} & {$n$} & {Mean $\deee$} & {Median $\deee$} & {SD} \\
+\midrule
+\texttt{none} (reflectance only) & 6 & 6.50 & 6.52 & 1.12 \\
+\textbf{\texttt{cat02\_bag}} & 6 & \bfseries 5.02 & \bfseries 4.61 & 1.47 \\
+\midrule
+{Change} & --- & \bfseries $-$1.48 & \bfseries $-$1.91 & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Per-trial Sephora Bag $\deee$ ($\Delta E_{\mathrm{gain}} = \deee_{\mathrm{none}} - \deee_{\mathrm{cat02\_bag}}$; positive = correction helped).}
+\label{tab:pansor_bag_per_trial}
+\begin{tabular}{l S[table-format=1.2] S[table-format=1.2] S[table-format=+-1.2] l}
+\toprule
+{Trial} & {$\deee$ (\texttt{none})} & {$\deee$ (\texttt{cat02\_bag})} & {$\Delta E_{\mathrm{gain}}$} & {Outcome} \\
+\midrule
+P1 Bag T1 & 6.36 & 7.56 & -1.20 & Worse \\
+P1 Bag T2 & 5.11 & 3.86 & +1.25 & Better \\
+P1 Bag T3 & 5.19 & 5.22 & -0.03 & Flat \\
+P2 Bag T1 & 6.69 & 3.32 & +3.37 & Better \\
+P2 Bag T2 & 7.51 & 4.01 & +3.50 & Better \\
+P2 Bag T3 & 8.16 & 6.14 & +2.02 & Better \\
+\midrule
+Mean & 6.50 & 5.02 & +1.49 & 4/6 helped \\
+Median & 6.52 & 4.61 & +1.64 & 67\% hit rate \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Sephora Bag trials by participant ($n=3$ bag trials each).}
+\label{tab:pansor_bag_by_participant}
+\begin{tabular}{l S[table-format=1.2] S[table-format=1.2] S[table-format=+-1.2] c}
+\toprule
+{Participant} & {Mean $\deee$ (\texttt{none})} & {Mean $\deee$ (\texttt{cat02\_bag})} & {Mean gain} & {Hit rate} \\
+\midrule
+P1 (Emily) & 5.55 & 5.54 & +0.01 & 1/3 \\
+P2 (Liki)  & 7.46 & 4.49 & +2.97 & 3/3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Bag correction hit rate ($\Delta E_{\mathrm{gain}} = \deee_{\mathrm{none}} - \deee_{\mathrm{cat02\_bag}}$; trial counted as ``helped'' if gain $\ge 0$).}
+\label{tab:pansor_hit_rate}
+\begin{tabular}{l S[table-format=1.0] S[table-format=1.2] S[table-format=1.2] c c}
+\toprule
+{Subset} & {$n$} & {Mean gain} & {Median gain} & {Helped} & {Hurt} \\
+\midrule
+All bag trials & 6 & 1.49 & 1.64 & 4 & 2 \\
+P1 bag only    & 3 & 0.01 & $-$0.03 & 1 & 2 \\
+P2 bag only    & 3 & 2.97 & 3.37 & 3 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Correction helped four of six bag trials (67\% hit rate). Gains were \textbf{participant-dependent}: P2 improved on every bag trial (mean $\deee$ 7.46 $\rightarrow$ 4.49); P1 showed no net mean improvement (5.55 $\rightarrow$ 5.54), with P1 Bag T1 worsening after CAT02 (6.36 $\rightarrow$ 7.56). Best single trial: P2 Bag T1 ($\deee=3.32$). Worst with correction: P1 Bag T1 ($\deee=7.56$).
+
+Table~\ref{tab:pansor_bag_lab} lists pipeline and FitSkin cheek coordinates on bag trials under \texttt{cat02\_bag} (production output).
+
+\begin{table}[htbp]
+\centering
+\caption{Sephora Bag trials under \texttt{cat02\_bag}: cheek CIELAB and per-channel offsets (pipeline $-$ FitSkin).}
+\label{tab:pansor_bag_lab}
+\small
+\begin{tabular}{lcccccccccc}
+\toprule
+& \multicolumn{3}{c}{Pipeline} & \multicolumn{3}{c}{FitSkin} &
+\multicolumn{3}{c}{Offset} & \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+{Trial} & $L^*$ & $a^*$ & $b^*$ & $L^*$ & $a^*$ & $b^*$ &
+$\Delta L^*$ & $\Delta a^*$ & $\Delta b^*$ & $\deee$ \\
+\midrule
+P1 Bag T1 & 59.8 & 11.0 & 15.0 & 68.9 & 11.4 & 15.8 & $-9.1$ & $-0.4$ & $-0.7$ & 7.56 \\
+P1 Bag T2 & 64.1 & 11.8 & 16.0 & 68.9 & 11.4 & 15.8 & $-4.8$ & $+0.4$ & $+0.2$ & 3.86 \\
+P1 Bag T3 & 75.5 & 12.9 & 18.5 & 68.9 & 11.4 & 15.8 & $+6.6$ & $+1.5$ & $+2.7$ & 5.22 \\
+P2 Bag T1 & 55.2 & 11.8 & 17.7 & 52.4 & 13.3 & 21.2 & $+2.8$ & $-1.5$ & $-3.5$ & 3.32 \\
+P2 Bag T2 & 56.1 & 12.0 & 17.8 & 52.4 & 13.3 & 21.2 & $+3.7$ & $-1.3$ & $-3.4$ & 4.01 \\
+P2 Bag T3 & 58.7 & 12.5 & 18.7 & 52.4 & 13.3 & 21.2 & $+6.4$ & $-0.8$ & $-2.4$ & 6.14 \\
+\midrule
+Mean   & 61.6 & 12.0 & 17.3 & 60.6 & 12.0 & 17.6 & $+0.9$ & $-0.3$ & $-1.2$ & 5.02 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Mean signed offsets under \texttt{cat02\_bag} were $\Delta L^*=+0.9$, $\Delta a^*=-0.3$, $\Delta b^*=-1.2$ (pipeline minus FitSkin). Residual error remained mixed in $L^*$ (P1 Bag T3 over-corrected lightness) and $b^*$ (P2 trials underestimated yellow--blue vs.\ FitSkin).
+
+%-----------------------------------------------------------------------------
+\subsection{ColorChecker trials (reflectance only)}
+%-----------------------------------------------------------------------------
+
+ColorChecker trials ($n=6$) used reflectance without in-scene chromatic correction (Table~\ref{tab:pansor_cc_summary}, Table~\ref{tab:pansor_cc_per_trial}). Mean cheek $\deee$ was 5.39 (median 5.30, SD 3.44). In-scene CC chromatic correction was excluded because ablation showed it increased error on this dark-room cohort.
+
+\begin{table}[htbp]
+\centering
+\caption{Pansor ColorChecker trials ($n=6$): reflectance only (\texttt{none}).}
+\label{tab:pansor_cc_summary}
+\begin{tabular}{l S[table-format=1.2] S[table-format=1.2] S[table-format=1.2] S[table-format=1.0]}
+\toprule
+{Participant} & {Mean $\deee$} & {Median $\deee$} & {Trial range} & {$n$} \\
+\midrule
+P1 & 1.96 & 2.02 & 1.82--2.03 & 3 \\
+P2 & 8.82 & 8.81 & 8.57--9.09 & 3 \\
+\midrule
+All & 5.39 & 5.30 & 1.82--9.09 & 6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Per-trial ColorChecker $\deee$ and cheek Lab (reflectance only).}
+\label{tab:pansor_cc_per_trial}
+\small
+\begin{tabular}{lcccccccccc}
+\toprule
+& \multicolumn{3}{c}{Pipeline} & \multicolumn{3}{c}{FitSkin} &
+\multicolumn{3}{c}{Offset} & \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+{Trial} & $L^*$ & $a^*$ & $b^*$ & $L^*$ & $a^*$ & $b^*$ &
+$\Delta L^*$ & $\Delta a^*$ & $\Delta b^*$ & $\deee$ \\
+\midrule
+P1 CC T1 & 68.8 & 13.2 & 18.7 & 68.9 & 11.4 & 15.8 & $-0.1$ & $+1.8$ & $+2.9$ & 1.82 \\
+P1 CC T2 & 69.9 & 13.0 & 18.9 & 68.9 & 11.4 & 15.8 & $+1.0$ & $+1.6$ & $+3.2$ & 2.02 \\
+P1 CC T3 & 70.1 & 12.4 & 18.9 & 68.9 & 11.4 & 15.8 & $+1.2$ & $+1.0$ & $+3.1$ & 2.03 \\
+P2 CC T1 & 61.8 & 15.1 & 24.4 & 52.4 & 13.3 & 21.2 & $+9.4$ & $+1.8$ & $+3.3$ & 8.81 \\
+P2 CC T2 & 62.2 & 14.3 & 23.6 & 52.4 & 13.3 & 21.2 & $+9.8$ & $+1.0$ & $+2.5$ & 9.09 \\
+P2 CC T3 & 61.7 & 14.0 & 22.4 & 52.4 & 13.3 & 21.2 & $+9.3$ & $+0.7$ & $+1.2$ & 8.57 \\
+\midrule
+Mean   & 65.8 & 13.6 & 21.2 & 60.6 & 12.0 & 17.6 & $+5.1$ & $+1.3$ & $+2.8$ & 5.39 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Participant identity dominated CC agreement more than condition label: P1 CC trials clustered near $\deee \approx 2$ despite cross-session reference, whereas P2 CC trials remained in a high single-digit band (mean 8.82) with large positive $\Delta L^*$ ($+9$--$+10$), indicating pipeline cheek $L^*$ exceeded FitSkin for the darker participant.
+
+%-----------------------------------------------------------------------------
+\subsection{Combined production outcome (12 trials)}
+%-----------------------------------------------------------------------------
+
+Table~\ref{tab:pansor_production_12} applies the locked rule: \texttt{cat02\_bag} on bag trials, \texttt{none} on CC trials.
+
+\begin{table}[htbp]
+\centering
+\caption{Production stack on all 12 Pansor trials (bag $\rightarrow$ \texttt{cat02\_bag}; CC $\rightarrow$ \texttt{none}).}
+\label{tab:pansor_production_12}
+\begin{tabular}{l S[table-format=1.0] S[table-format=1.2] S[table-format=1.2] S[table-format=1.2]}
+\toprule
+{Analysis set} & {$n$} & {Mean $\deee$} & {Median $\deee$} & {SD} \\
+\midrule
+Production (12 trials) & 12 & 5.21 & 4.96 & 2.55 \\
+All trials, \texttt{none} only & 12 & 5.95 & 6.52 & 2.61 \\
+Bag subset, \texttt{cat02\_bag} & 6 & 5.02 & 4.61 & 1.47 \\
+CC subset, \texttt{none} & 6 & 5.39 & 5.30 & 3.44 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%-----------------------------------------------------------------------------
+\subsection{Comparison to Phase~4 booth cohort}
+%-----------------------------------------------------------------------------
+
+Table~\ref{tab:pansor_vs_phase4} contrasts absolute cheek $\deee$ with the same-session booth Phase~4 chart-free stack. Pansor absolute errors are approximately 1--3 $\deee$ higher than Phase~4, consistent with cross-session FitSkin reference, app-exported ProRAW capture, and dark-room Pansor conditions. The within-cohort comparison of bag \texttt{cat02\_bag} vs.\ bag \texttt{none} ($-$1.5 mean $\deee$) is the primary inferential result.
+
+\begin{table}[htbp]
+\centering
+\caption{Absolute cheek $\deee$ across cohorts (different reference sessions).}
+\label{tab:pansor_vs_phase4}
+\begin{tabular}{l S[table-format=1.0] S[table-format=1.2] l}
+\toprule
+{Cohort / subset} & {$n$} & {Median $\deee$} & {FitSkin reference} \\
+\midrule
+Phase~4 booth (chart-free) & 5 & 3.50 & Same-session \\
+Pansor production (12 trials) & 12 & 4.96 & May~20 cross-session \\
+Pansor bag (\texttt{cat02\_bag}) & 6 & 4.61 & May~20 cross-session \\
+Pansor bag (\texttt{none}) & 6 & 6.52 & May~20 cross-session \\
+Pansor CC (\texttt{none}) & 6 & 5.30 & May~20 cross-session \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%-----------------------------------------------------------------------------
+\subsection{Repeatability (T1--T3)}
+%-----------------------------------------------------------------------------
+
+Table~\ref{tab:pansor_repeatability} reports within-cell SD of $\deee$ across three repeated trials. Bag \texttt{cat02\_bag} showed higher trial-to-trial variability than bag \texttt{none}; CC \texttt{none} was most stable.
+
+\begin{table}[htbp]
+\centering
+\caption{Within-participant repeatability: SD of $\deee$ across T1--T3.}
+\label{tab:pansor_repeatability}
+\begin{tabular}{ll S[table-format=1.2] S[table-format=1.2] S[table-format=1.3]}
+\toprule
+{Condition} & {Mode} & {P1 SD} & {P2 SD} & {Mean SD} \\
+\midrule
+Sephora Bag & \texttt{none} & 0.57 & 0.60 & 0.59 \\
+Sephora Bag & \texttt{cat02\_bag} & 1.53 & 1.20 & 1.37 \\
+Color Checker & \texttt{none} & 0.10 & 0.21 & 0.15 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%-----------------------------------------------------------------------------
+\subsection{Quality covariates (bag CAT02 gain)}
+%-----------------------------------------------------------------------------
+
+Correction gain ($\Delta E_{\mathrm{gain}} = \deee_{\mathrm{none}} - \deee_{\mathrm{cat02\_bag}}$) correlated with bag stripe sampling quality (Table~\ref{tab:pansor_quality}). Larger white-stripe sample counts and higher bag white/black luminance ratios were associated with greater correction benefit. Successful bag trials used \texttt{stripe\_scan+hands} or \texttt{stripe\_scan+sam+hands} detection modes.
+
+\begin{table}[htbp]
+\centering
+\caption{Correlation of bag CAT02 gain with segmentation quality covariates ($n=6$ bag trials).}
+\label{tab:pansor_quality}
+\begin{tabular}{l S[table-format=2.2] l}
+\toprule
+{Covariate} & {$r$} & {Interpretation} \\
+\midrule
+White-stripe pixel count ($n_{\mathrm{white}}$) & -0.90 & More pixels $\rightarrow$ larger gain \\
+Bag white/black $Y$ ratio & +0.81 & Higher ratio $\rightarrow$ larger gain \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%-----------------------------------------------------------------------------
+\subsection{Summary of findings}
+%-----------------------------------------------------------------------------
+
+\begin{enumerate}
+  \item \textbf{Bag CAT02 improves mean agreement on bag trials} (6.50 $\rightarrow$ 5.02 $\deee$; median 6.52 $\rightarrow$ 4.61).
+  \item \textbf{Benefit is participant-dependent:} P2 gained $\approx$3 $\deee$ on all bag trials; P1 was flat overall with one failure (P1 Bag T1).
+  \item \textbf{CC trials remain uncorrected} (mean 5.39 $\deee$); in-scene CC chromatic modes hurt on this cohort.
+  \item \textbf{Trial gating is required:} ungated bag CAT02 on ColorChecker frames causes stripe false-positives and large errors.
+  \item \textbf{Cross-session reference inflates absolute $\deee$} vs.\ Phase~4; report Pansor as relative bag-correction gain, not absolute scanner agreement.
+\end{enumerate}
+
+%=============================================================================
+\section{Discussion points (brief)}
+%=============================================================================
+
+\begin{itemize}
+  \item Report Pansor primarily as \textbf{relative improvement from bag CAT02} on bag trials ($-1.5$ mean $\deee$), not as absolute same-session scanner agreement.
+  \item \textbf{Do not} apply bag CAT02 on ColorChecker frames without trial gating: stripe detection false-positives on chart whites caused large errors when ungated.
+  \item Production deployment should log \texttt{bag\_cat02\_status} and treat P1 Bag T1--style failures as first-class outcomes.
+  \item Reproducibility: \url{https://github.com/RooneyEmily/Fitskin} (\texttt{flash\_no\_flash\_skin\_lab.py}, \texttt{bag\_chromatic\_correction.py}).
+\end{itemize}
+
+%=============================================================================
+% Optional: paste into main paper as Results paragraph
+%=============================================================================
+\section*{Results paragraph (copy-paste for main paper)}
+\small
+On the Pansor iPhone cohort ($N=12$ trial pairs; two participants $\times$ Sephora Bag and ColorChecker $\times$ three trials), we compared Pipeline~4 cheek CIELAB to cross-session FitSkin reference (May~20 median cheek Lab). On six Sephora Bag trials, in-scene bag CAT02 chromatic adaptation (\texttt{cat02\_bag}) reduced mean cheek $\deee$ from 6.50 to 5.02 versus chart-free geometric reflectance alone (median 6.52 $\rightarrow$ 4.61; four of six trials improved, 67\% hit rate). Gains were strongest for Participant~2 (mean $\deee$ 7.46 $\rightarrow$ 4.49 on all three bag trials; Participant~1 showed no net improvement). Six ColorChecker trials used reflectance without in-scene chromatic correction (mean $\deee$ 5.39; Participant~1 mean 1.96, Participant~2 mean 8.82). Under the locked production rule (bag $\rightarrow$ \texttt{cat02\_bag}, CC $\rightarrow$ \texttt{none}), the 12-trial mean $\deee$ was 5.21 (median 4.96), versus 5.95 (median 6.52) for reflectance alone on all trials. Absolute $\deee$ exceeded the same-session booth Phase~4 cohort (median 3.50, $N=5$), consistent with cross-session reference and app-exported ProRAW capture; the primary Pansor result is relative improvement from bag CAT02 on bag trials ($-$1.5 mean $\deee$).
+
+\section*{Methods paragraph (copy-paste for main paper)}
+\small
+Paired iPhone ProRAW (DNG) images were demosaiced to linear camera RGB with embedded camera white balance. The flash frame was ECC-registered to no-flash; flash exposure was scaled to match skin-mask median luma. On Sephora Bag trials, the bag white stripe was segmented in linear RGB (stripe-energy scan plus two-hand MediaPipe refinement); a CAT02 matrix mapped scene white to Nix Spectro~2 D65 bag reference and was applied to both frames before re-warp and reflectance. Per-pixel reflectance was $\mathbf{R}=\sqrt{\mathbf{A}\odot\mathbf{B}}$. ColorChecker trials received no in-scene chromatic correction. Reflectance was converted to cheek CIELAB via offline affine ColorChecker calibration, per-participant exposure anchor, and a MediaPipe cheek ROI (5\% trimmed means). Bag CAT02 was gated to bag trials only (\texttt{condition\_code=BAG}).
+
+\end{document}

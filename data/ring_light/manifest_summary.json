@@ -1,0 +1,28 @@
+{
+  "data_root": "/home/mabl-main/Downloads/Variable Lighting Ring Light-20260829T185351Z-1-001/Variable Lighting Ring Light",
+  "cache_dir": "/home/mabl-main/color_space_research/new/Fitskin/data/ring_light_cc_cache",
+  "n_trials_scanned": 84,
+  "n_cc_detected": 84,
+  "n_f12": 40,
+  "n_d65": 44,
+  "by_person": {
+    "all": {
+      "Anjana": 17,
+      "Lihn": 21,
+      "Parker": 26,
+      "Woojae": 20
+    },
+    "F12": {
+      "Anjana": 13,
+      "Lihn": 9,
+      "Parker": 10,
+      "Woojae": 8
+    },
+    "D65": {
+      "Anjana": 4,
+      "Lihn": 12,
+      "Parker": 16,
+      "Woojae": 12
+    }
+  }
+}

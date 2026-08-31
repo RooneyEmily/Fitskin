@@ -117,6 +117,7 @@ D65_XYZN = np.array([0.95047, 1.0, 1.08883], dtype=np.float64)
 # Optional iPhone calibration (monochromator + MK350 flash); set in main() from --iphone-calibration
 _CAMERA_RGB_TO_XYZ: Optional[np.ndarray] = None
 _CAMERA_RGB_TO_XYZ_AFFINE: Optional[np.ndarray] = None  # (4, 3): [R,G,B,1] @ M → XYZ
+_COLOR_PROJECTOR: Any = None  # optional residual Fourier MLP on top of affine
 _IPHONE_FLASH_CCT_K: Optional[float] = None
 _IPHONE_FLASH_RGB: Optional[np.ndarray] = None
 _ACTIVE_CALIBRATION_DIR: Optional[Path] = None
@@ -144,6 +145,21 @@ def apply_iphone_calibration_dir(cal_dir: Path) -> Any:
     _ACTIVE_CALIBRATION_DIR = cal_dir
     _CACHED_CAL = cal
     return cal
+
+
+def apply_color_projector_path(path: Optional[Path]) -> None:
+    """Load optional residual color projector artifact (``.npz`` + ``.json``)."""
+    global _COLOR_PROJECTOR
+    if path is None:
+        _COLOR_PROJECTOR = None
+        return
+    from models.color_projector import load_color_projector_artifact
+
+    p = path.expanduser().resolve()
+    if not p.is_file():
+        raise SystemExit(f"--color-projector not found: {p}")
+    _COLOR_PROJECTOR = load_color_projector_artifact(p)
+    print(f"Using color projector from {p}", file=sys.stderr)
 
 _DEFAULT_RAW_DATA_ROOT = Path(
     "/home/mabl-main/Documents/RAW Dataset-20260531T233644Z-3-001/RAW Dataset"
@@ -469,6 +485,10 @@ def _float_field(row: dict, key: str) -> float:
 def linear_rgb_to_xyz_d65(rgb_lin: np.ndarray) -> np.ndarray:
     """(H,W,3) linear RGB → XYZ (D65 white; matrix from calibration bundle or sRGB default)."""
     x = np.asarray(rgb_lin, dtype=np.float64)
+    if _COLOR_PROJECTOR is not None:
+        from models.color_projector import apply_color_projector_rgb
+
+        return apply_color_projector_rgb(x, _COLOR_PROJECTOR, use_green_blur=True)
     if _CAMERA_RGB_TO_XYZ_AFFINE is not None:
         shp = x.shape
         flat = x.reshape(-1, 3)
@@ -1199,6 +1219,15 @@ def main() -> None:
         ),
     )
     ap.add_argument(
+        "--color-projector",
+        type=Path,
+        default=None,
+        help=(
+            "Optional residual Fourier MLP artifact (.npz from scripts/train_color_projector.py). "
+            "Applied on top of the affine camera RGB→XYZ map for reflectance Lab."
+        ),
+    )
+    ap.add_argument(
         "--iphone-calibration-tone-root",
         type=Path,
         default=None,
@@ -1353,6 +1382,8 @@ def main() -> None:
             f"flash CCT≈{cal.flash_cct_k:.0f} K",
             file=sys.stderr,
         )
+
+    apply_color_projector_path(args.color_projector)
 
     exposure_anchors: Optional[Dict[str, float]] = None
     if args.fitskin_lightness_calibration and args.no_fitskin:
@@ -1932,9 +1963,15 @@ def main() -> None:
         summary["nix_bag_json"] = str(args.nix_bag_json.resolve())
         n_applied = sum(1 for r in rows_out if r.get("reflectance_bag_cat02"))
         summary["bag_cat02_applied_trials"] = n_applied
+    if args.color_projector is not None:
+        summary["color_projector"] = str(args.color_projector.expanduser().resolve())
     if args.production:
         summary["production"] = True
-        summary["primary_method"] = "reflectance + cat02_bag (Sephora Bag trials only)"
+        summary["primary_method"] = (
+            "reflectance + cat02_bag (Sephora Bag trials only)"
+            if bag_cat02_mode != "off"
+            else "chart-free reflectance → D65 Lab (no in-scene color reference)"
+        )
     if args.raw_u01_percentile_skin:
         summary["raw_u01_scale"] = "skin-mask 99.5th percentile"
     if not args.production:

@@ -342,6 +342,65 @@ Indian is the weakest stratum: FairFace often predicts Latino\_Hispanic or South
 FairFace-4 hard accuracy was higher (${\sim}78\%$) but mean $\deee$ worse ($\num{4.17}$), driven by Iranian$\to$Indian and selected Indian$\to$Black misroutes.
 \textbf{FairFace-7 is preferred.}
 
+\subsection{Threshold honesty check (15/5 and LOSO retune)}
+\label{sec:honesty}
+Person-specific ROI patches (e.g.\ Latino$\to$Indian remaps, White high-$a^*$ rejects, Black $b^*$-gated chroma boosts) can drive cohort mean $\deee$ toward ${\sim}2.7$, but they overfit named subjects.
+We therefore keep only the coarse FairFace-routed rules above and stress-test those \emph{defaults} with a cheap holdout protocol on cached cheek Lab clouds (color path frozen):
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{40 random splits:} train thresholds on 15 participants (coordinate descent over a small grid), evaluate on the held-out 5.
+  \item \textbf{LOSO retune:} tune on 19 participants, score the held-out person.
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\caption{ROI threshold honesty check on Pansor-20 ($N=65$ trials, 20 participants).
+``Frozen'' $=$ published \pipename{} defaults; ``retune'' $=$ grid search on the train fold only.}
+\label{tab:honesty}
+\begin{tabular}{lcc}
+\toprule
+Protocol & Mean $\deee$ & Notes \\
+\midrule
+Full cohort, frozen defaults & 3.63 & Headline \\
+Holdout-5, frozen defaults (40 splits) & $3.70\pm0.55$ & p10--p90: 3.00--4.49 \\
+Retune on 15 $\to$ test on 5 & train 3.34 / test 3.88 & Retune wins 38\% of splits \\
+LOSO retune (person means) & frozen 3.69 / retune 3.88 & $\Delta{+}0.19$ vs frozen \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Retuning improves the train fold but \textbf{worsens} held-out error on average ($\Delta\approx{+}0.19$).
+It helps a few lighter White subjects when the grid drifts toward higher $L^*$ percentiles, and harms others (e.g.\ Yuan, Jalona, Charles) when medium/Black gates move.
+\textbf{Conclusion:} published defaults are a more honest operating point than cohort retuning; quote holdout dispersion (${\sim}\pm0.5$) when interpreting 3.63.
+
+\subsection{Tone$\to$ethnicity vs.\ FairFace for ambiguous appearance}
+\label{sec:tone-vs-ff}
+A natural alternative is to predict the ROI ethnicity key from cheek tone/chroma (LOSO logistic regression on $L^*,a^*,b^*,C^*$, ITA, $L$ percentiles) instead of FairFace.
+Cohort LOSO already favors FairFace ($\deee=\num{3.63}$ vs.\ tone$\to$ethnicity $\deee=\num{3.89}$; ethnicity accuracy ${\sim}52\%$).
+Case studies for three ambiguous appearances:
+
+\begin{table}[h]
+\centering
+\caption{FairFace vs.\ tone$\to$ethnicity (LOSO) vs.\ best-of-five ethnicity oracle for selected subjects.
+Tone does not help these cases.}
+\label{tab:tone-cases}
+\begin{tabular}{llcccc}
+\toprule
+Subject & Demographics & FairFace ROI & Tone LOSO & Mean $\deee$ (FF $\to$ tone) & Oracle eth \\
+\midrule
+Charles & Asian & Asian & Indian & $4.24\to4.24$ & Asian \\
+Yuan    & Asian & Asian & Iranian/White & $2.68\to4.81$ & Asian \\
+Jalona  & Black (lighter) & Black & Indian & $2.99\to4.99$ & Black \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Interpretation.}
+Jalona sits in a lighter, higher-chroma cheek Lab region than other Black subjects in this cohort; tone misroutes her to Indian sampling, whereas FairFace's face prior correctly keeps the Black $L_{p10}$ branch.
+Charles and Yuan already receive appropriate Asian rules under FairFace; tone mislabels do not improve $\deee$ (Charles: Indian and Asian both use the same low-$a^*$ shadow/hiC branch; Yuan: White/Iranian routing leaves the helpful low-$C^*$ $L_{p70}$ path).
+\textbf{Recommendation:} keep FairFace-7 as the ROI prior.
+If tone is used at all, it should drive sampling features directly (e.g.\ gates on $L^*$/$C^*$/ITA), not as a second race classifier.
+
 %=============================================================================
 \section{Implementation artifacts}
 %=============================================================================
@@ -354,6 +413,7 @@ FairFace-4 hard accuracy was higher (${\sim}78\%$) but mean $\deee$ worse ($\num
   \item Summary JSON: \texttt{results/pansor20\_fairface7/summary.json}
   \item ROI LOSO (Lab classifier): \texttt{scripts/validate\_roi\_sampling\_loso.py},
     \texttt{results/pansor20\_roi\_loso/}
+  \item Threshold honesty check: \texttt{results/pansor20\_fairface7/honesty\_check/}
 \end{itemize}
 
 %=============================================================================
@@ -361,10 +421,11 @@ FairFace-4 hard accuracy was higher (${\sim}78\%$) but mean $\deee$ worse ($\num
 %=============================================================================
 
 \begin{enumerate}[leftmargin=*]
-  \item \textbf{\texttt{specular\_tone} thresholds} ($L$ percentiles, $a^*$/$C^*$ gates, $L^*{<}58$) were tuned on this cohort.
-    Treat ROI as a heuristic; quote frozen-path $\deee=\num{5.55}$ for colorimetry-only claims.
+  \item \textbf{\texttt{specular\_tone} thresholds} ($L$ percentiles, $a^*$/$C^*$ gates, $L^*{<}58$) are coarse heuristics.
+    A 15/5 retune check (\S\ref{sec:honesty}) shows that further grid fitting on this cohort hurts holdout error; still treat ROI as non-colorimetric and quote frozen-path $\deee=\num{5.55}$ for colorimetry-only claims.
   \item \textbf{FairFace} is trained on sRGB web faces; ProRAW preview crops may shift predictions.
     It is a demographic/ROI prior, not a skin-tone instrument.
+  \item \textbf{Tone$\to$ethnicity} is a weaker ROI router than FairFace on this set (\S\ref{sec:tone-vs-ff}), especially for lighter Black / medium Asian cheeks.
   \item \textbf{Single phone / indoor set.} Cross-device and outdoor generalization are unproven here.
   \item \textbf{Cross-session FitSkin.} Demographics FitSkin Lab is not same-moment paired with every trial; absolute $\deee$ includes temporal and protocol variance.
   \item \textbf{Ethics.} Race classification in product flows requires careful UX and policy framing; prefer describing FairFace as an appearance prior for sampling, not identity assertion.
@@ -373,6 +434,7 @@ FairFace-4 hard accuracy was higher (${\sim}78\%$) but mean $\deee$ worse ($\num
 \paragraph{Suggested paper wording.}
 ``We freeze a FitSkin-free colorimetric path (pre-AWB flash/no-flash reflectance, pooled affine, fixed 5500\,K Bradford adaptation to D65; mean $\deee=\num{5.55}$).
 Optionally, FairFace-7 on a landmark face crop selects a cheek sampling policy that reduces mean $\deee$ to $\num{3.63}$ without demographics labels at runtime.
+A 15-participant / 5-holdout threshold retune check does not beat these defaults on held-out subjects, and a cheek tone$\to$ethnicity classifier is weaker than FairFace for ROI routing (LOSO $\deee=\num{3.89}$).
 The sampling policy is a heuristic ROI router, validated against FitSkin for error reporting only.''
 
 %=============================================================================

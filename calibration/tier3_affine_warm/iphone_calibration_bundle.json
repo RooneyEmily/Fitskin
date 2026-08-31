@@ -1,0 +1,80 @@
+{
+  "device_label": "chart-free ring warm_f12 affine",
+  "matrix_fit": "affine lstsq cheek R0 with MK350 CAT to D65 FitSkin Lab",
+  "matrix_affine": true,
+  "camera_rgb_to_xyz_affine": [
+    [
+      -9.967607038102264e-14,
+      -4.3658358892272794e-14,
+      8.613068703986837e-16
+    ],
+    [
+      3.110225163851752e-13,
+      1.3622861126061715e-13,
+      -2.6875641183237257e-15
+    ],
+    [
+      -2.2469600954087817e-12,
+      -9.84173933492495e-13,
+      1.941611622814953e-14
+    ],
+    [
+      -1.536828717751202e-13,
+      -6.731346797585049e-14,
+      1.3279828630419883e-15
+    ]
+  ],
+  "training_meta": {
+    "method": "chart_free_cheek_reflectance_vs_fitskin",
+    "base_cal_dir": "/home/mabl-main/color_space_research/new/Fitskin/calibration/tier3_affine",
+    "ridge": 0.01,
+    "max_pixels_per_trial": 400,
+    "mk350_ring_xy": {
+      "D65": [
+        55.24,
+        10.98
+      ],
+      "F12": [
+        57.44,
+        10.46
+      ]
+    },
+    "warm_f12": {
+      "illuminant": "F12",
+      "n_trials": 40,
+      "n_pixels": 16000,
+      "n_people": 4,
+      "mk350_xy": [
+        57.44,
+        10.46
+      ],
+      "ridge": 0.01,
+      "loo_mean_de00": 43.4394735986279,
+      "loo_median_de00": 46.33111231474845,
+      "all_fit_eval": {
+        "n": 4,
+        "mean_de00": 43.43947359853639,
+        "median_de00": 46.33111231464662
+      }
+    },
+    "d65_ring": {
+      "illuminant": "D65",
+      "n_trials": 44,
+      "n_pixels": 17600,
+      "n_people": 4,
+      "mk350_xy": [
+        55.24,
+        10.98
+      ],
+      "ridge": 0.01,
+      "loo_mean_de00": 42.7657824037981,
+      "loo_median_de00": 45.101296569798386,
+      "all_fit_eval": {
+        "n": 4,
+        "mean_de00": 42.76578240373114,
+        "median_de00": 45.101296569685346
+      }
+    },
+    "note": "Warm/d65 ring affines fit cheek R0 \u2192 XYZ with MK350 scene white + FitSkin Lab targets. Not CC-supervised; validate with LOO. Route: F12\u2192M_warm, D65 ring\u2192M_d65, else tier3_affine."
+  }
+}

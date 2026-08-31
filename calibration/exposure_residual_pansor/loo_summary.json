@@ -1,0 +1,125 @@
+{
+  "all_cells": {
+    "people": [
+      "Giana",
+      "Keaton",
+      "Parker",
+      "Wooj"
+    ],
+    "per_person": {
+      "Giana": {
+        "n_test": 25,
+        "mean_de00_uncorrected": 10.7423,
+        "mean_de00_L_residual": 3.8811,
+        "mean_de00_Lab_residual": 2.5638
+      },
+      "Keaton": {
+        "n_test": 25,
+        "mean_de00_uncorrected": 12.3001,
+        "mean_de00_L_residual": 3.9589,
+        "mean_de00_Lab_residual": 3.719
+      },
+      "Parker": {
+        "n_test": 22,
+        "mean_de00_uncorrected": 13.6494,
+        "mean_de00_L_residual": 5.0527,
+        "mean_de00_Lab_residual": 3.5917
+      },
+      "Wooj": {
+        "n_test": 27,
+        "mean_de00_uncorrected": 11.6635,
+        "mean_de00_L_residual": 4.2982,
+        "mean_de00_Lab_residual": 2.8987
+      }
+    },
+    "loo_mean_de00_uncorrected": 12.0888,
+    "loo_mean_de00_L_residual": 4.2977,
+    "loo_mean_de00_Lab_residual": 3.1933,
+    "chosen_model": "Lab_residual",
+    "loo_mean_de00_chosen": 3.1933,
+    "improves_over_baseline": true,
+    "lam": 0.01
+  },
+  "in_band": {
+    "people": [
+      "Giana",
+      "Keaton",
+      "Parker",
+      "Wooj"
+    ],
+    "per_person": {
+      "Giana": {
+        "n_test": 13,
+        "mean_de00_uncorrected": 4.9125,
+        "mean_de00_L_residual": 2.2713,
+        "mean_de00_Lab_residual": 3.7662
+      },
+      "Keaton": {
+        "n_test": 12,
+        "mean_de00_uncorrected": 5.5798,
+        "mean_de00_L_residual": 3.6787,
+        "mean_de00_Lab_residual": 6.8168
+      },
+      "Parker": {
+        "n_test": 10,
+        "mean_de00_uncorrected": 6.0201,
+        "mean_de00_L_residual": 3.6754,
+        "mean_de00_Lab_residual": 3.3505
+      },
+      "Wooj": {
+        "n_test": 14,
+        "mean_de00_uncorrected": 4.1642,
+        "mean_de00_L_residual": 1.8508,
+        "mean_de00_Lab_residual": 3.5902
+      }
+    },
+    "loo_mean_de00_uncorrected": 5.1692,
+    "loo_mean_de00_L_residual": 2.869,
+    "loo_mean_de00_Lab_residual": 4.3809,
+    "chosen_model": "L_residual",
+    "loo_mean_de00_chosen": 2.869,
+    "improves_over_baseline": true,
+    "lam": 0.01
+  },
+  "selected": {
+    "people": [
+      "Giana",
+      "Keaton",
+      "Parker",
+      "Wooj"
+    ],
+    "per_person": {
+      "Giana": {
+        "n_test": 13,
+        "mean_de00_uncorrected": 4.9125,
+        "mean_de00_L_residual": 2.2713,
+        "mean_de00_Lab_residual": 3.7662
+      },
+      "Keaton": {
+        "n_test": 12,
+        "mean_de00_uncorrected": 5.5798,
+        "mean_de00_L_residual": 3.6787,
+        "mean_de00_Lab_residual": 6.8168
+      },
+      "Parker": {
+        "n_test": 10,
+        "mean_de00_uncorrected": 6.0201,
+        "mean_de00_L_residual": 3.6754,
+        "mean_de00_Lab_residual": 3.3505
+      },
+      "Wooj": {
+        "n_test": 14,
+        "mean_de00_uncorrected": 4.1642,
+        "mean_de00_L_residual": 1.8508,
+        "mean_de00_Lab_residual": 3.5902
+      }
+    },
+    "loo_mean_de00_uncorrected": 5.1692,
+    "loo_mean_de00_L_residual": 2.869,
+    "loo_mean_de00_Lab_residual": 4.3809,
+    "chosen_model": "L_residual",
+    "loo_mean_de00_chosen": 2.869,
+    "improves_over_baseline": true,
+    "lam": 0.01
+  }
+}

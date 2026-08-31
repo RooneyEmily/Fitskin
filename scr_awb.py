@@ -70,9 +70,43 @@ DEFAULT_PARTICIPANT_PRIOR: dict[str, str] = {
     "P2": "issa_median_south_asian",
 }
 
+# Pansor-20 demographics ethnicity → ISSA cheek-median prior (FitSkin-free).
+ETHNICITY_PRIOR: dict[str, str] = {
+    "white": "issa_median_caucasian",
+    "black": "issa_median_african",
+    "indian": "issa_median_south_asian",
+    "asian": "issa_median_east_asian",
+    "iranian": "issa_median_middle_eastern",
+    "middle eastern": "issa_median_middle_eastern",
+    "middle_eastern": "issa_median_middle_eastern",
+    "caucasian": "issa_median_caucasian",
+    "european": "issa_median_european",
+    "african": "issa_median_african",
+    "south asian": "issa_median_south_asian",
+    "east asian": "issa_median_east_asian",
+    "chinese": "issa_median_chinese",
+    "japanese": "issa_median_japanese",
+    "thai": "issa_median_thai",
+}
+
 # Three-term illuminant basis (K) — Zhou uses SVD daylight bank; Planck triple is a stable v1.
 BASIS_CCT_K = (3000.0, 5500.0, 9000.0)
+# Week-2 richer but still rank-3 (M is 3×K; K>3 is underdetermined for RGB).
+RICH_BASIS_CCT_K = (2300.0, 4500.0, 6500.0)
 _EPS = 1e-12
+
+
+def prior_for_ethnicity(ethnicity: str, default: str = "issa_median_caucasian") -> str:
+    """Map demographics ethnicity label → ISSA prior name."""
+    key = (ethnicity or "").strip().lower()
+    if not key:
+        return default
+    if key in ETHNICITY_PRIOR:
+        return ETHNICITY_PRIOR[key]
+    for k, v in ETHNICITY_PRIOR.items():
+        if k in key or key in k:
+            return v
+    return default
 
 
 @dataclass
@@ -100,13 +134,36 @@ def _planck_spd_on_wl(wavelengths_nm: np.ndarray, cct_k: float) -> np.ndarray:
 def build_illuminant_basis(
     wavelengths_nm: np.ndarray,
     basis_cct_k: Sequence[float] = BASIS_CCT_K,
+    extra_spds: Optional[Sequence[np.ndarray]] = None,
 ) -> np.ndarray:
-    """(n_basis, n_wl) normalized Planck SPD samples."""
+    """(n_basis, n_wl) normalized Planck SPD samples (+ optional measured SPDs)."""
     wl = np.asarray(wavelengths_nm, dtype=np.float64)
     rows = []
     for cct in basis_cct_k:
         rows.append(_planck_spd_on_wl(wl, float(cct)))
+    if extra_spds:
+        for spd in extra_spds:
+            s = np.asarray(spd, dtype=np.float64).reshape(-1)
+            if s.shape[0] != wl.shape[0]:
+                # assume spd sampled on same grid length; else skip
+                continue
+            s = s / max(float(np.max(s)), _EPS)
+            rows.append(s)
     return np.stack(rows, axis=0)
+
+
+def load_flash_spd_on_wl(
+    cal_bundle: dict,
+    wavelengths_nm: np.ndarray,
+) -> Optional[np.ndarray]:
+    """Resample MK350 flash SPD from calibration bundle onto ``wavelengths_nm``."""
+    wl_f = cal_bundle.get("flash_spd_wl_nm")
+    pwr = cal_bundle.get("flash_spd_power")
+    if not wl_f or not pwr:
+        return None
+    wl = np.asarray(wavelengths_nm, dtype=np.float64)
+    spd = np.interp(wl, np.asarray(wl_f, dtype=np.float64), np.asarray(pwr, dtype=np.float64))
+    return spd / max(float(np.max(spd)), _EPS)
 
 
 def build_scr_system_matrix(
@@ -200,9 +257,12 @@ def resolve_prior_name(
     subject_id: str,
     override: Optional[str] = None,
     priors_dir: Optional[Path] = None,
+    ethnicity: Optional[str] = None,
 ) -> str:
     if override:
         return override.strip()
+    if ethnicity:
+        return prior_for_ethnicity(ethnicity)
     sid = (subject_id or "").strip().upper()
     if sid.startswith("P1"):
         return DEFAULT_PARTICIPANT_PRIOR["P1"]
@@ -217,6 +277,15 @@ def resolve_prior_name(
     return "issa_median_caucasian"
 
 
+def illuminant_rgb_to_xyz_white(illuminant_rgb: np.ndarray, affine_4x3: np.ndarray) -> np.ndarray:
+    """Map SCR illuminant RGB → XYZ white (Y-normalized) via camera affine."""
+    rgb = np.asarray(illuminant_rgb, dtype=np.float64).reshape(3)
+    M = np.asarray(affine_4x3, dtype=np.float64)
+    xyz = np.array([*rgb, 1.0], dtype=np.float64) @ M
+    xyz = np.maximum(xyz, _EPS)
+    return xyz / max(float(xyz[1]), _EPS)
+
+
 def estimate_scr_awb(
     noflash_linear: np.ndarray,
     skin_mask: np.ndarray,
@@ -225,6 +294,7 @@ def estimate_scr_awb(
     wavelengths_nm: Sequence[float],
     skin_prior: SkinReflectancePrior,
     basis_cct_k: Sequence[float] = BASIS_CCT_K,
+    extra_spds: Optional[Sequence[np.ndarray]] = None,
     known_ambient_cct_k: Optional[float] = None,
     known_ambient_duv: float = 0.0,
 ) -> ScrAwbResult:
@@ -232,14 +302,20 @@ def estimate_scr_awb(
     s = np.asarray(spectral_sensitivity_rgb, dtype=np.float64)
     r = skin_prior.resample_to(wl)
     r = r / max(float(np.max(r)), _EPS)
-    basis = build_illuminant_basis(wl, basis_cct_k)
+    basis = build_illuminant_basis(wl, basis_cct_k, extra_spds=extra_spds)
     m = build_scr_system_matrix(s, r, basis)
     rgb_med = median_skin_linear_rgb(noflash_linear, skin_mask)
     if not np.all(np.isfinite(rgb_med)):
         raise ValueError("SCR-AWB: no finite skin median RGB")
     alpha, res = _solve_alpha_nnls(m, rgb_med)
     illum_solved = illuminant_rgb_from_alpha(s, basis, alpha)
-    cct = estimate_ambient_cct_from_alpha(alpha, basis_cct_k)
+    # CCT from Planck components; if measured-SPD basis dominates, use ~5500 K flash/daylight.
+    n_planck = len(tuple(basis_cct_k))
+    a = np.asarray(alpha, dtype=np.float64)
+    if a.sum() > _EPS and n_planck < len(a) and float(a[n_planck:].sum()) > 0.5 * float(a.sum()):
+        cct = 5500.0
+    else:
+        cct = estimate_ambient_cct_from_alpha(a[:n_planck], basis_cct_k)
     if known_ambient_cct_k is not None and float(known_ambient_cct_k) > 0.0:
         try:
             from src.lu2006_ambient import planck_rgb_from_cct_duv  # type: ignore

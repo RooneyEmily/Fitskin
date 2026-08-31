@@ -1,0 +1,60 @@
+{
+  "baseline_csv": "/home/mabl-main/color_space_research/new/Fitskin/results/pansor20_chartfree_d65_affine/pansor20_chartfree_d65.csv",
+  "n_trials": 65,
+  "n_participants": 20,
+  "affine_mean_de00": 5.925729156491598,
+  "loo_lab_affine_mean_de00": 4.365515935891131,
+  "loo_lab_affine_median_de00": 4.197621301021662,
+  "frozen_all_fit_mean_de00": 3.498568772004527,
+  "frozen_all_fit_median_de00": 3.2896648397879082,
+  "by_ethnicity_loo": {
+    "Asian": {
+      "n": 13,
+      "mean_de00": 3.3318447778296925,
+      "median_de00": 2.257784913582879
+    },
+    "Black": {
+      "n": 14,
+      "mean_de00": 4.786737304159275,
+      "median_de00": 5.2027651245273425
+    },
+    "Indian": {
+      "n": 18,
+      "mean_de00": 3.4940704697178875,
+      "median_de00": 2.238816340156335
+    },
+    "Iranian": {
+      "n": 6,
+      "mean_de00": 3.868690227820841,
+      "median_de00": 3.649558091775229
+    },
+    "White": {
+      "n": 14,
+      "mean_de00": 6.237487260075757,
+      "median_de00": 5.679461095194541
+    }
+  },
+  "lab_affine_4x3": [
+    [
+      1.6778272879588523,
+      0.027914807428781482,
+      -0.23561489001855873
+    ],
+    [
+      -1.1900730703631173,
+      0.19714576356929397,
+      0.2864586237211282
+    ],
+    [
+      -0.41476536167621947,
+      0.05894091171549953,
+      0.7243492827715551
+    ],
+    [
+      -7.31896969543312,
+      6.185907732691914,
+      11.263187767711976
+    ]
+  ],
+  "note": "LOO mean is the honest generalization estimate. Frozen W is fit on all Pansor-20 trials for deployment; frozen_all_fit_* is optimistic (not held-out)."
+}

@@ -1,0 +1,252 @@
+{
+  "loo_all_cells": {
+    "people": [
+      "Giana",
+      "Keaton",
+      "Parker",
+      "Wooj"
+    ],
+    "per_person": {
+      "Giana": {
+        "n_test": 25,
+        "mean_de00_uncorrected": 10.7423,
+        "mean_de00_L_residual": 3.8811,
+        "mean_de00_Lab_residual": 2.5638
+      },
+      "Keaton": {
+        "n_test": 25,
+        "mean_de00_uncorrected": 12.3001,
+        "mean_de00_L_residual": 3.9589,
+        "mean_de00_Lab_residual": 3.719
+      },
+      "Parker": {
+        "n_test": 22,
+        "mean_de00_uncorrected": 13.6494,
+        "mean_de00_L_residual": 5.0527,
+        "mean_de00_Lab_residual": 3.5917
+      },
+      "Wooj": {
+        "n_test": 27,
+        "mean_de00_uncorrected": 11.6635,
+        "mean_de00_L_residual": 4.2982,
+        "mean_de00_Lab_residual": 2.8987
+      }
+    },
+    "loo_mean_de00_uncorrected": 12.0888,
+    "loo_mean_de00_L_residual": 4.2977,
+    "loo_mean_de00_Lab_residual": 3.1933,
+    "chosen_model": "Lab_residual",
+    "loo_mean_de00_chosen": 3.1933,
+    "improves_over_baseline": true,
+    "lam": 0.01
+  },
+  "loo_in_band": {
+    "people": [
+      "Giana",
+      "Keaton",
+      "Parker",
+      "Wooj"
+    ],
+    "per_person": {
+      "Giana": {
+        "n_test": 13,
+        "mean_de00_uncorrected": 4.9125,
+        "mean_de00_L_residual": 2.2713,
+        "mean_de00_Lab_residual": 3.7662
+      },
+      "Keaton": {
+        "n_test": 12,
+        "mean_de00_uncorrected": 5.5798,
+        "mean_de00_L_residual": 3.6787,
+        "mean_de00_Lab_residual": 6.8168
+      },
+      "Parker": {
+        "n_test": 10,
+        "mean_de00_uncorrected": 6.0201,
+        "mean_de00_L_residual": 3.6754,
+        "mean_de00_Lab_residual": 3.3505
+      },
+      "Wooj": {
+        "n_test": 14,
+        "mean_de00_uncorrected": 4.1642,
+        "mean_de00_L_residual": 1.8508,
+        "mean_de00_Lab_residual": 3.5902
+      }
+    },
+    "loo_mean_de00_uncorrected": 5.1692,
+    "loo_mean_de00_L_residual": 2.869,
+    "loo_mean_de00_Lab_residual": 4.3809,
+    "chosen_model": "L_residual",
+    "loo_mean_de00_chosen": 2.869,
+    "improves_over_baseline": true,
+    "lam": 0.01
+  },
+  "loo": {
+    "people": [
+      "Giana",
+      "Keaton",
+      "Parker",
+      "Wooj"
+    ],
+    "per_person": {
+      "Giana": {
+        "n_test": 13,
+        "mean_de00_uncorrected": 4.9125,
+        "mean_de00_L_residual": 2.2713,
+        "mean_de00_Lab_residual": 3.7662
+      },
+      "Keaton": {
+        "n_test": 12,
+        "mean_de00_uncorrected": 5.5798,
+        "mean_de00_L_residual": 3.6787,
+        "mean_de00_Lab_residual": 6.8168
+      },
+      "Parker": {
+        "n_test": 10,
+        "mean_de00_uncorrected": 6.0201,
+        "mean_de00_L_residual": 3.6754,
+        "mean_de00_Lab_residual": 3.3505
+      },
+      "Wooj": {
+        "n_test": 14,
+        "mean_de00_uncorrected": 4.1642,
+        "mean_de00_L_residual": 1.8508,
+        "mean_de00_Lab_residual": 3.5902
+      }
+    },
+    "loo_mean_de00_uncorrected": 5.1692,
+    "loo_mean_de00_L_residual": 2.869,
+    "loo_mean_de00_Lab_residual": 4.3809,
+    "chosen_model": "L_residual",
+    "loo_mean_de00_chosen": 2.869,
+    "improves_over_baseline": true,
+    "lam": 0.01
+  },
+  "train_domain": "in_band",
+  "selected": {
+    "model": "L_residual",
+    "feature_names": [
+      "bias",
+      "EV",
+      "L",
+      "EV_x_L"
+    ],
+    "weights": [
+      46.50408029185024,
+      7.9838766846373055,
+      -0.8156631758494024,
+      -0.18090014795963139
+    ],
+    "lam": 0.01
+  },
+  "fit_L_residual_all": {
+    "model": "L_residual",
+    "feature_names": [
+      "bias",
+      "EV",
+      "L",
+      "EV_x_L"
+    ],
+    "weights": [
+      55.03902093323072,
+      -0.8644967198668677,
+      -0.9479581641382729,
+      0.006147938690774295
+    ],
+    "lam": 0.01
+  },
+  "fit_Lab_residual_all": {
+    "model": "Lab_residual",
+    "feature_names": [
+      "bias",
+      "EV",
+      "L",
+      "a",
+      "b"
+    ],
+    "weights": [
+      [
+        57.96144721021688,
+        9.314404391810468,
+        21.56293647868878
+      ],
+      [
+        -0.2338626424001323,
+        -0.030543477064033854,
+        0.0900046463645096
+      ],
+      [
+        -0.9054819153892112,
+        0.05002897601959524,
+        -0.19596930112617417
+      ],
+      [
+        -0.06258928576154012,
+        -0.8209894142719072,
+        -0.1498023553547109
+      ],
+      [
+        -0.21841395904787955,
+        -0.09692271738913236,
+        -0.4536597593358204
+      ]
+    ],
+    "lam": 0.01
+  },
+  "fit_L_residual_in_band": {
+    "model": "L_residual",
+    "feature_names": [
+      "bias",
+      "EV",
+      "L",
+      "EV_x_L"
+    ],
+    "weights": [
+      46.50408029185024,
+      7.9838766846373055,
+      -0.8156631758494024,
+      -0.18090014795963139
+    ],
+    "lam": 0.01
+  },
+  "fit_Lab_residual_in_band": {
+    "model": "Lab_residual",
+    "feature_names": [
+      "bias",
+      "EV",
+      "L",
+      "a",
+      "b"
+    ],
+    "weights": [
+      [
+        41.938573812256884,
+        6.905292511433665,
+        30.609755079048476
+      ],
+      [
+        -1.0797724250614584,
+        -0.44518667443425924,
+        0.685360097583497
+      ],
+      [
+        -0.527379318095453,
+        0.03185315264341286,
+        -0.4224748245851304
+      ],
+      [
+        -0.3059938355608075,
+        -0.6944806042098128,
+        -0.05313279012049814
+      ],
+      [
+        -0.35591897411938384,
+        -0.031474256479739705,
+        -0.2995967583572692
+      ]
+    ],
+    "lam": 0.01
+  },
+  "train_n": 49,
+  "source_camera_csv": "/home/mabl-main/color_space_research/new/Fitskin/results/camera_settings/camera_settings_results.csv"
+}
