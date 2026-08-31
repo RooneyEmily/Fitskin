@@ -92,100 +92,13 @@ def load_dng_linear(path: Path, *, half_size: bool = True, use_camera_wb: bool =
     return rgb / (float(np.percentile(rgb, 99.5)) + 1e-12)
 
 
-def load_apple_landmarks(path: Path) -> dict:
-    with path.open(encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _region_map(face: dict) -> dict:
-    return {str(r.get("name")): r for r in (face.get("regions") or []) if r.get("name")}
-
-
-def _pts_px(region, src_w, src_h, dst_w, dst_h, origin_ll=True) -> np.ndarray:
-    pts = region.get("imagePoints")
-    if pts:
-        xy = np.array([[float(p["x"]), float(p["y"])] for p in pts], dtype=np.float64)
-    else:
-        npts = region.get("normalizedImagePoints") or []
-        if not npts:
-            return np.zeros((0, 2), dtype=np.int32)
-        xy = np.array(
-            [[float(p["x"]) * src_w, float(p["y"]) * src_h] for p in npts],
-            dtype=np.float64,
-        )
-    if origin_ll:
-        xy[:, 1] = float(src_h) - xy[:, 1]
-    if src_w != dst_w or src_h != dst_h:
-        xy[:, 0] *= dst_w / float(src_w)
-        xy[:, 1] *= dst_h / float(src_h)
-    return np.round(xy).astype(np.int32)
-
-
-def _fill_hull(h, w, pts) -> np.ndarray:
-    m = np.zeros((h, w), dtype=np.uint8)
-    if pts is None or len(pts) < 3:
-        return m
-    cv2.fillConvexPoly(m, cv2.convexHull(pts.reshape(-1, 1, 2)), 255)
-    return m
-
-
-def _fill_poly(h, w, pts) -> np.ndarray:
-    m = np.zeros((h, w), dtype=np.uint8)
-    if pts is None or len(pts) < 3:
-        return m
-    cv2.fillPoly(m, [pts.reshape(-1, 1, 2)], 255)
-    return m
-
-
-def apple_face_cheek_masks(landmarks: dict, dst_h: int, dst_w: int):
-    faces = landmarks.get("faces") or []
-    if not faces:
-        raise ValueError("No faces in landmark JSON")
-    regions = _region_map(faces[0])
-    isize = landmarks.get("imageSize") or {}
-    src_w = int(isize.get("width") or dst_w)
-    src_h = int(isize.get("height") or dst_h)
-    origin_ll = "lower" in str(landmarks.get("coordinateOrigin") or "lowerLeft").lower()
-
-    def pts(name):
-        r = regions.get(name)
-        return _pts_px(r, src_w, src_h, dst_w, dst_h, origin_ll) if r else np.zeros((0, 2), dtype=np.int32)
-
-    parts = [p for p in (pts("faceContour"), pts("leftEyebrow"), pts("rightEyebrow")) if len(p)]
-    hull_pts = np.vstack(parts) if parts else pts("allPoints")
-    face = _fill_hull(dst_h, dst_w, hull_pts)
-    for name in ("leftEye", "rightEye", "leftEyebrow", "rightEyebrow", "outerLips", "innerLips"):
-        p = pts(name)
-        if len(p) >= 3:
-            excl = _fill_poly(dst_h, dst_w, p)
-            k = max(3, int(0.01 * min(dst_h, dst_w)) | 1)
-            excl = cv2.dilate(excl, np.ones((k, k), np.uint8), 1)
-            face = cv2.bitwise_and(face, cv2.bitwise_not(excl))
-    eye_y, mouth_y = [], []
-    for n in ("leftEye", "rightEye", "leftPupil", "rightPupil"):
-        p = pts(n)
-        if len(p):
-            eye_y.extend(p[:, 1].tolist())
-    for n in ("outerLips", "innerLips"):
-        p = pts(n)
-        if len(p):
-            mouth_y.extend(p[:, 1].tolist())
-    if eye_y and mouth_y:
-        y0, y1 = float(np.median(eye_y)), float(np.median(mouth_y))
-        top, bot = int(y0 + 0.15 * (y1 - y0)), int(y0 + 0.95 * (y1 - y0))
-    else:
-        ys = hull_pts[:, 1]
-        top = int(ys.min() + 0.35 * (ys.max() - ys.min()))
-        bot = int(ys.min() + 0.78 * (ys.max() - ys.min()))
-    band = np.zeros_like(face)
-    band[max(0, top) : min(dst_h, bot), :] = 255
-    cheek = cv2.bitwise_and(face, band)
-    nose = pts("nose") if len(pts("nose")) else pts("medianLine")
-    if len(nose):
-        cx = int(np.median(nose[:, 0]))
-        half = max(4, int(0.04 * dst_w))
-        cheek[:, max(0, cx - half) : min(dst_w, cx + half)] = 0
-    return face, cheek
+from pipeline.skin_roi import (  # noqa: E402
+    apple_face_cheek_masks,
+    apple_face_forehead_mask,
+    apple_face_skin_roi_mask,
+    load_apple_landmarks,
+    refine_forehead_mask,
+)
 
 
 def rgb_to_xyz_affine(rgb: np.ndarray, M_aff: np.ndarray) -> np.ndarray:
@@ -228,6 +141,82 @@ def _trimmed_mean_lab(lab: np.ndarray, trim: float = 0.05) -> np.ndarray:
     return lab2.mean(axis=0)
 
 
+# Same L*/a*/b* binning gates as physio_skin_lab_monk / chart_cc (drops hair, specular, gray).
+SKIN_LAB_TRIM_DEFAULT: Dict[str, float] = {
+    "l_star_trim_lo": 0.05,
+    "l_star_trim_hi": 0.05,
+    "a_star_trim_lo": 0.05,
+    "a_star_trim_hi": 0.05,
+    "b_star_trim_lo": 0.05,
+    "b_star_trim_hi": 0.05,
+    "min_chroma_ab": 2.0,
+}
+FOREHEAD_SKIN_LAB_TRIM: Dict[str, float] = {
+    **SKIN_LAB_TRIM_DEFAULT,
+    "l_star_trim_hi": 0.10,
+}
+
+
+def apply_skin_lab_binning(
+    lab: np.ndarray,
+    *,
+    l_star_trim_lo: float = 0.05,
+    l_star_trim_hi: float = 0.05,
+    a_star_trim_lo: float = 0.05,
+    a_star_trim_hi: float = 0.05,
+    b_star_trim_lo: float = 0.05,
+    b_star_trim_hi: float = 0.05,
+    min_chroma_ab: float = 2.0,
+    min_keep: int = 40,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Quantile binning on masked Lab pixels (tan/gray histogram gates)."""
+    from physio_skin_lab_monk import _apply_channel_quantile_trim
+
+    lab = np.asarray(lab, dtype=np.float64)
+    if lab.ndim != 2 or lab.shape[1] != 3 or lab.shape[0] < 10:
+        return lab, {"skin_binning": False, "n_before": int(lab.shape[0]), "n_after": int(lab.shape[0])}
+
+    L, a, b = lab[:, 0], lab[:, 1], lab[:, 2]
+    n_raw = int(lab.shape[0])
+
+    def _select(
+        *,
+        l_hi: float,
+        use_chroma: bool,
+    ) -> np.ndarray:
+        sel = np.ones(n_raw, dtype=bool)
+        sel = _apply_channel_quantile_trim(sel, L, l_star_trim_lo, l_hi)
+        sel = _apply_channel_quantile_trim(sel, a, a_star_trim_lo, a_star_trim_hi)
+        sel = _apply_channel_quantile_trim(sel, b, b_star_trim_lo, b_star_trim_hi)
+        if use_chroma and min_chroma_ab > 0.0:
+            sel &= np.hypot(a, b) >= float(min_chroma_ab)
+        return sel
+
+    sel = _select(l_hi=l_star_trim_hi, use_chroma=True)
+    relaxed = None
+    if int(np.count_nonzero(sel)) < min_keep:
+        sel = _select(l_hi=l_star_trim_hi, use_chroma=False)
+        relaxed = "chroma"
+    if int(np.count_nonzero(sel)) < min_keep and l_star_trim_hi > 0.0:
+        sel = _select(l_hi=0.0, use_chroma=True)
+        relaxed = "L_hi"
+    if int(np.count_nonzero(sel)) < min_keep:
+        sel = np.ones(n_raw, dtype=bool)
+        relaxed = "all"
+
+    n_after = int(np.count_nonzero(sel))
+    out = lab[sel] if n_after >= 10 else lab
+    meta: Dict[str, Any] = {
+        "skin_binning": True,
+        "n_before": n_raw,
+        "n_after": int(out.shape[0]),
+        "skin_binning_kept_frac": float(n_after / max(1, n_raw)),
+    }
+    if relaxed:
+        meta["skin_binning_relaxed"] = relaxed
+    return out, meta
+
+
 def mean_lab_on_mask(
     rgb,
     mask,
@@ -241,10 +230,14 @@ def mean_lab_on_mask(
     l_sampling: str = "off",
     ethnicity: Optional[str] = None,
     tone_classifier: Optional[Any] = None,
+    skin_lab_trim: Optional[Dict[str, float]] = None,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """Cheek Lab with optional specular/shadow-aware sampling.
+    """Skin Lab with optional L*/a*/b* binning and specular/shadow-aware sampling.
 
     Returns ``(Lab, meta)``.
+
+    ``skin_lab_trim``: if set, apply physio-style quantile gates (drops hair / specular /
+    near-neutral pixels) before the sampling policy. Use ``FOREHEAD_SKIN_LAB_TRIM`` on forehead.
 
     ``l_sampling``:
       - ``off``: trimmed mean (frozen colorimetric path).
@@ -269,10 +262,14 @@ def mean_lab_on_mask(
         d = float(np.clip(cat_degree, 0.0, 1.0))
         pix_xyz = (1.0 - d) * pix_xyz + d * adapted
     lab = xyz_to_lab(pix_xyz)
-    C = np.hypot(lab[:, 1], lab[:, 2])
-    lab = lab[C >= min_chroma] if (C >= min_chroma).sum() >= 10 else lab
-
     meta: Dict[str, Any] = {}
+    if skin_lab_trim:
+        lab, bin_meta = apply_skin_lab_binning(lab, min_keep=40, **skin_lab_trim)
+        meta.update(bin_meta)
+    else:
+        C = np.hypot(lab[:, 1], lab[:, 2])
+        lab = lab[C >= min_chroma] if (C >= min_chroma).sum() >= 10 else lab
+
     if l_sampling == "specular_tone":
         out, sm = apply_specular_tone_sampling(lab, ethnicity, trim=trim)
         meta.update(sm)

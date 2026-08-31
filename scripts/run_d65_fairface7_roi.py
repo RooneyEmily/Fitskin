@@ -8,7 +8,8 @@ Best stack (ring variable lighting)::
   python scripts/run_d65_fairface7_roi.py \\
     --zip "$HOME/Downloads/.../AnjanaF12B1Torch.zip" \\
     --cat-mode hybrid_deploy \\
-    --multi-lab-corrector calibration/multi_illuminant_lab_affine/multi_illuminant_lab_affine.json
+    --multi-lab-corrector calibration/multi_illuminant_lab_affine/multi_illuminant_lab_affine.json \\
+    --roi forehead
 
 Indoor / frozen CAT baseline::
 
@@ -131,6 +132,12 @@ def main() -> None:
         help="Optional residual RGB→XYZ projector (.npz).",
     )
     ap.add_argument(
+        "--roi",
+        choices=("forehead", "cheek"),
+        default="forehead",
+        help="Skin ROI from Apple landmarks (forehead = FitSkin scan site).",
+    )
+    ap.add_argument(
         "--sampling",
         choices=("fairface7", "off"),
         default="fairface7",
@@ -156,9 +163,10 @@ def main() -> None:
         color_projector=args.color_projector,
         half_size=not bool(args.full_res),
         sampling=str(args.sampling),
+        roi=str(args.roi),
     )
     print(
-        f"Loaded pipeline  cal={args.cal_dir}  sampling={args.sampling}  "
+        f"Loaded pipeline  cal={args.cal_dir}  roi={args.roi}  sampling={args.sampling}  "
         f"cat_mode={args.cat_mode}  half_size={not args.full_res}"
     )
 
@@ -236,10 +244,10 @@ def _print_one(result: dict) -> None:
     eth = result.get("predicted_ethnicity")
     print(
         f"Lab=({result['L']:.2f}, {result['a']:.2f}, {result['b']:.2f})  "
-        f"n_cheek={result.get('n_cheek')}  "
+        f"roi={result.get('roi')}  n_roi={result.get('n_roi')}  "
         f"cat={result.get('cat_mode')}  ill={result.get('illuminant_label')}  "
         f"FF={ff}→{eth}  "
-        f"sampling={result.get('l_sampling')}"
+        f"sampling={result.get('roi_sampling_mode') or result.get('l_sampling')}"
     )
     ef = result.get("exposure_flags") or {}
     if ef.get("out_of_band"):

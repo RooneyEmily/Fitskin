@@ -40,6 +40,10 @@ def infer_illuminant_label(path: Union[str, Path]) -> Optional[str]:
         if name in ("D65", "D65 "):
             return "D65"
     stem = p.stem.upper().replace(" ", "")
+    if "D65" in stem:
+        return "D65"
+    if "F12" in stem or "D12" in stem:
+        return "F12"
     if re.search(r"(^|[-_])F12([-_]|$)|D12", stem):
         return "F12"
     if re.search(r"(^|[-_])D65([-_]|$)", stem):

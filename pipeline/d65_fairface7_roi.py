@@ -2,12 +2,12 @@
 
 Frozen color path:
   pre-AWB flash/no-flash reflectance → tier3 affine RGB→XYZ →
-  Bradford CAT 5500K→D65 → cheek Lab.
+  Bradford CAT 5500K→D65 → skin Lab on Apple Vision ROI.
 
-Optional ROI:
-  FairFace-7 on a landmark face crop selects specular/shadow cheek sampling
-  (``sampling='fairface7'``, default). Use ``sampling='off'`` for trimmed-mean
-  only (claimable colorimetry without the ROI heuristic).
+ROI:
+  ``roi='forehead'`` (FitSkin scan site) or ``roi='cheek'`` (legacy Pansor path).
+  FairFace-7 specular/shadow sampling applies on cheek only; forehead uses
+  trimmed mean. Use ``sampling='off'`` for trimmed-mean on any ROI.
 
 No FitSkin, demographics, SCR-AWB, Lab correctors, or person-specific gates.
 """
@@ -44,8 +44,9 @@ from pipeline.post_corrections import (  # noqa: E402
     apply_multi_illuminant_lab_affine,
 )
 from models.fairface_race import FairFacePredictor, face_rgb_crop_from_landmarks  # noqa: E402
+from pipeline.skin_roi import apple_face_skin_roi_mask  # noqa: E402
 from scripts.evaluate_pansor20_chartfree_d65 import (  # noqa: E402
-    apple_face_cheek_masks,
+    FOREHEAD_SKIN_LAB_TRIM,
     extract_zip,
     linear_rgb_to_preview_bgr,
     load_affine,
@@ -92,7 +93,7 @@ def exposure_flags(
 
 @dataclass
 class D65FairFace7ROIPipeline:
-    """Load-once affine + FairFace-7 runner for chart-free cheek Lab."""
+    """Load-once affine + FairFace-7 runner for chart-free skin Lab."""
 
     M: np.ndarray
     fairface: Optional[FairFacePredictor]
@@ -105,6 +106,7 @@ class D65FairFace7ROIPipeline:
     half_size: bool = True
     cat_degree: float = 1.0
     sampling: str = "fairface7"  # fairface7 | off
+    roi: str = "forehead"  # forehead | cheek
     cal_dir: Optional[Path] = None
     fairface_dir: Optional[Path] = None
 
@@ -122,6 +124,7 @@ class D65FairFace7ROIPipeline:
         color_projector: Optional[Path] = None,
         half_size: bool = True,
         sampling: str = "fairface7",
+        roi: str = "forehead",
         cat_degree: float = 1.0,
     ) -> "D65FairFace7ROIPipeline":
         cal = Path(cal_dir or DEFAULT_CAL_DIR).expanduser().resolve()
@@ -169,6 +172,7 @@ class D65FairFace7ROIPipeline:
             half_size=bool(half_size),
             cat_degree=float(cat_degree),
             sampling=str(sampling),
+            roi=str(roi),
             cal_dir=cal,
             fairface_dir=ff_dir,
         )
@@ -239,14 +243,21 @@ class D65FairFace7ROIPipeline:
             B0 = cv2.resize(B0, (A0.shape[1], A0.shape[0]), interpolation=cv2.INTER_AREA)
 
         lm = load_apple_landmarks(lm_path)
-        _, cheek = apple_face_cheek_masks(lm, A0.shape[0], A0.shape[1])
-        n_cheek = int(np.count_nonzero(cheek))
-        if n_cheek < 50:
-            raise RuntimeError(f"empty cheek mask ({n_cheek} px)")
+        roi_key = str(self.roi or "forehead").strip().lower()
+        skin_mask = apple_face_skin_roi_mask(
+            lm, A0.shape[0], A0.shape[1], roi=roi_key, linear_rgb=A0 if roi_key == "forehead" else None
+        )
+        n_roi = int(np.count_nonzero(skin_mask))
+        if n_roi < 50:
+            raise RuntimeError(f"empty {roi_key} mask ({n_roi} px)")
 
         fairface_meta: Dict[str, Any] = {}
         sampling_mode = "off"
         ethnicity_for_sampling: Optional[str] = None
+        use_specular_tone = (
+            roi_key == "cheek"
+            and self.sampling in ("fairface", "fairface7", "fairface4")
+        )
         if self.sampling in ("fairface", "fairface7", "fairface4"):
             if self.fairface is None:
                 raise RuntimeError("FairFace sampling requested but predictor not loaded")
@@ -254,7 +265,8 @@ class D65FairFace7ROIPipeline:
             face_rgb = face_rgb_crop_from_landmarks(preview, lm, padding=0.35)
             ff = self.fairface.predict_rgb(face_rgb)
             ethnicity_for_sampling = ff["predicted_ethnicity"]
-            sampling_mode = "specular_tone"
+            if use_specular_tone:
+                sampling_mode = "specular_tone"
             fairface_meta = {
                 "predicted_ethnicity": ff["predicted_ethnicity"],
                 "fairface_label": ff["fairface_label"],
@@ -263,7 +275,7 @@ class D65FairFace7ROIPipeline:
                 "fairface_probs": {k: float(v) for k, v in (ff.get("race_probs") or {}).items()},
             }
 
-        B0m, flash_scale0 = match_flash_exposure(A0, B0, cheek)
+        B0m, flash_scale0 = match_flash_exposure(A0, B0, skin_mask)
         R0 = np.sqrt(np.maximum(A0, 0) * np.maximum(B0m, 0) + 1e-8)
 
         cat_meta: Dict[str, Any] = {"cat_mode": self.cat_mode}
@@ -276,7 +288,7 @@ class D65FairFace7ROIPipeline:
         elif self.cat_mode in ("lu_torch", "hybrid_deploy"):
             if self.torch_prior is None:
                 raise RuntimeError(f"cat_mode={self.cat_mode} requires torch_prior")
-            align = align_flash_linear(A0, B0, cheek_mask=cheek, use_ecc=True)
+            align = align_flash_linear(A0, B0, cheek_mask=skin_mask, use_ecc=True)
             lu_res = estimate_lu(align, self.torch_prior, use_measured_spd_rgb=True)
             lu_cct = float(lu_res.ambient_cct_estimated_k)
             cat_meta["lu_cct_k"] = lu_cct
@@ -303,13 +315,14 @@ class D65FairFace7ROIPipeline:
 
         Lab, sample_meta = mean_lab_on_mask(
             R0,
-            cheek,
+            skin_mask,
             self.M,
             projector=self.color_projector,
             xyz_scene_white=xyz_white,
             cat_degree=float(self.cat_degree),
             l_sampling=sampling_mode,
             ethnicity=ethnicity_for_sampling,
+            skin_lab_trim=FOREHEAD_SKIN_LAB_TRIM if roi_key == "forehead" else None,
         )
 
         lab_corr_key: Optional[str] = None
@@ -328,7 +341,10 @@ class D65FairFace7ROIPipeline:
             "L": float(Lab[0]),
             "a": float(Lab[1]),
             "b": float(Lab[2]),
-            "n_cheek": n_cheek,
+            "roi": roi_key,
+            "n_roi": n_roi,
+            "n_cheek": n_roi if roi_key == "cheek" else None,
+            "n_forehead": n_roi if roi_key == "forehead" else None,
             "flash_scale": float(flash_scale0),
             "shape": [int(x) for x in A0.shape],
             "scr_mode": "preawb_cat",
@@ -342,7 +358,10 @@ class D65FairFace7ROIPipeline:
             "color_projector": bool(self.color_projector),
             "cat_degree": float(self.cat_degree),
             "half_size": bool(self.half_size),
-            "l_sampling": self.sampling,
+            "l_sampling": sampling_mode,
+            "roi_sampling_mode": sampling_mode,
+            "skin_binning": sample_meta.get("skin_binning"),
+            "skin_binning_kept_frac": sample_meta.get("skin_binning_kept_frac"),
             "cal_dir": str(self.cal_dir) if self.cal_dir else None,
             "l_percentile": sample_meta.get("l_percentile"),
             "indian_branch": sample_meta.get("indian_branch"),

@@ -43,8 +43,9 @@ sys.path.insert(0, str(ROOT))
 from delta_e_2000 import delta_e_2000  # noqa: E402
 from flash_noflash_spectral import planck_xyz_y1  # noqa: E402
 from models.fairface_race import FairFacePredictor, face_rgb_crop_from_landmarks  # noqa: E402
+from pipeline.skin_roi import apple_face_skin_roi_mask  # noqa: E402
 from scripts.evaluate_pansor20_chartfree_d65 import (  # noqa: E402
-    apple_face_cheek_masks,
+    FOREHEAD_SKIN_LAB_TRIM,
     extract_zip,
     linear_rgb_to_preview_bgr,
     load_affine,
@@ -351,21 +352,23 @@ def process_trial(
         if B0.shape != A0.shape:
             B0 = cv2.resize(B0, (A0.shape[1], A0.shape[0]), interpolation=cv2.INTER_AREA)
         lm = load_apple_landmarks(lm_path)
-        _, cheek = apple_face_cheek_masks(lm, A0.shape[0], A0.shape[1])
-        if int(np.count_nonzero(cheek)) < 50:
-            raise RuntimeError("empty cheek mask")
+        skin_mask = apple_face_skin_roi_mask(
+            lm, A0.shape[0], A0.shape[1], roi="forehead", linear_rgb=A0
+        )
+        if int(np.count_nonzero(skin_mask)) < 50:
+            raise RuntimeError("empty forehead mask")
 
         preview = linear_rgb_to_preview_bgr(A0)
         face_rgb = face_rgb_crop_from_landmarks(preview, lm, padding=0.35)
         ff = fairface.predict_rgb(face_rgb)
         ethnicity = ff["predicted_ethnicity"]
 
-        B0m, flash_scale = match_flash_exposure(A0, B0, cheek)
+        B0m, flash_scale = match_flash_exposure(A0, B0, skin_mask)
         R0 = np.sqrt(np.maximum(A0, 0) * np.maximum(B0m, 0) + 1e-8)
         cc_white_scale = in_frame_cc_white_scale(R0, preview)
 
-        align_plain = align_flash_linear(A0, B0, cheek_mask=cheek, use_ecc=False)
-        align_ecc = align_flash_linear(A0, B0, cheek_mask=cheek, use_ecc=True)
+        align_plain = align_flash_linear(A0, B0, cheek_mask=skin_mask, use_ecc=False)
+        align_ecc = align_flash_linear(A0, B0, cheek_mask=skin_mask, use_ecc=True)
 
         lu_cct_res = estimate_lu(align_plain, torch_prior, use_measured_spd_rgb=False)
         lu_spd_res = estimate_lu(align_ecc, torch_prior, use_measured_spd_rgb=True)
@@ -373,7 +376,7 @@ def process_trial(
         lu_cct = float(lu_cct_res.ambient_cct_estimated_k)
         lu_spd_cct = float(lu_spd_res.ambient_cct_estimated_k)
 
-        nf_pix = A0[cheek > 0]
+        nf_pix = A0[skin_mask > 0]
         nf_median = np.median(nf_pix, axis=0)
         nf_cct = chroma_to_planck_cct(np.maximum(nf_median, 1e-8))
         fused_cct = fused_lu_nf_cct(lu_spd_cct, nf_median, lu_weight=0.8)
@@ -476,13 +479,14 @@ def process_trial(
             rgb_in = R0_cc if spec.get("routed_affine") else R0
             lab, _ = mean_lab_on_mask(
                 rgb_in,
-                cheek,
+                skin_mask,
                 M_use,
                 projector=projector,
                 xyz_scene_white=xyz_w,
                 cat_degree=cat_degree,
-                l_sampling="specular_tone",
+                l_sampling="off",
                 ethnicity=ethnicity,
+                skin_lab_trim=FOREHEAD_SKIN_LAB_TRIM,
             )
             if spec.get("lab_affine") and lab_affine_W is not None:
                 lab = apply_lab_affine(lab, lab_affine_W)

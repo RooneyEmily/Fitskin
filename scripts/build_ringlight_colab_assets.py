@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 INCLUDE = [
     "pipeline/__init__.py",
+    "pipeline/skin_roi.py",
     "pipeline/d65_fairface7_roi.py",
     "pipeline/illuminant_estimation.py",
     "pipeline/post_corrections.py",

@@ -1,26 +1,55 @@
 {
-  "description": "Demo torch zips for Colab (Anjana + Lihn, D65 + F12). ~20 MB each.",
+  "description": "Demo torch zips for Colab — 4 participants × D65/F12 (~20 MB each).",
+  "reference_note": "fitskin_forehead Lab from Booth Lighting.xlsx. Pipeline predicts forehead Lab (Apple Vision ROI).",
   "repo_subdir": "data/ring_light/demo_zips",
   "demos": [
     {
       "file": "AnjanaF12B1Torch.zip",
       "person": "Anjana",
-      "illuminant": "F12"
+      "illuminant": "F12",
+      "fitskin_forehead": {"L": 40.39, "a": 11.75, "b": 22.21}
     },
     {
       "file": "Anjana-D65-C3Torch.zip",
       "person": "Anjana",
-      "illuminant": "D65"
+      "illuminant": "D65",
+      "fitskin_forehead": {"L": 37.63, "a": 11.40, "b": 18.29}
     },
     {
       "file": "Lihn-F12-B1Torch.zip",
       "person": "Lihn",
-      "illuminant": "F12"
+      "illuminant": "F12",
+      "fitskin_forehead": {"L": 57.44, "a": 10.46, "b": 21.16}
     },
     {
       "file": "LihnD65-C1Torch.zip",
       "person": "Lihn",
-      "illuminant": "D65"
+      "illuminant": "D65",
+      "fitskin_forehead": {"L": 55.24, "a": 10.98, "b": 20.58}
+    },
+    {
+      "file": "Parker-F12-E1Torch.zip",
+      "person": "Parker",
+      "illuminant": "F12",
+      "fitskin_forehead": {"L": 56.54, "a": 11.27, "b": 20.21}
+    },
+    {
+      "file": "Parker-D65-E1Torch.zip",
+      "person": "Parker",
+      "illuminant": "D65",
+      "fitskin_forehead": {"L": 55.99, "a": 11.89, "b": 20.53}
+    },
+    {
+      "file": "Woojae-F12-E3Torch.zip",
+      "person": "Woojae",
+      "illuminant": "F12",
+      "fitskin_forehead": {"L": 58.85, "a": 13.23, "b": 18.78}
+    },
+    {
+      "file": "Woojae-D65-A1Torch.zip",
+      "person": "Woojae",
+      "illuminant": "D65",
+      "fitskin_forehead": {"L": 61.23, "a": 12.22, "b": 20.48}
     }
   ]
 }

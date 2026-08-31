@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy four demo *Torch.zip files into data/ring_light/demo_zips/ for Colab/GitHub."""
+"""Copy eight demo *Torch.zip files (4 participants × D65/F12) into data/ring_light/demo_zips/."""
 
 from __future__ import annotations
 
@@ -35,6 +35,10 @@ def main() -> None:
         "Anjana-D65-C3Torch.zip": list(data_root.rglob("Anjana-D65-C3Torch.zip")),
         "Lihn-F12-B1Torch.zip": list(data_root.rglob("Lihn-F12-B1Torch.zip")),
         "LihnD65-C1Torch.zip": list(data_root.rglob("LihnD65-C1Torch.zip")),
+        "Parker-F12-E1Torch.zip": list(data_root.rglob("Parker-F12-E1Torch.zip")),
+        "Parker-D65-E1Torch.zip": list(data_root.rglob("Parker-D65-E1Torch.zip")),
+        "Woojae-F12-E3Torch.zip": list(data_root.rglob("Woojae-F12-E3Torch.zip")),
+        "Woojae-D65-A1Torch.zip": list(data_root.rglob("Woojae-D65-A1Torch.zip")),
     }
     OUT.mkdir(parents=True, exist_ok=True)
     for name, hits in picks.items():
